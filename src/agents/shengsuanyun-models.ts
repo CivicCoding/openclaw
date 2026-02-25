@@ -125,22 +125,192 @@ function supportsVision(model: ShengSuanYunModel): boolean {
   );
 }
 
-export async function getShengSuanYunModels(): Promise<ModelDefinitionConfig[]> {
-  // Skip API discovery in test environment
-  if (process.env.NODE_ENV === "test" || process.env.VITEST) {
-    return [];
-  }
+// Default models shown before API discovery (e.g., during onboarding)
+const DEFAULT_SHENGSUANYUN_MODELS: ModelDefinitionConfig[] = [
+  {
+    id: "google/gemini-3-flash",
+    name: "Gemini 3 Flash Preview",
+    reasoning: false,
+    api: "openai-completions",
+    input: ["text", "image"],
+    cost: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+    },
+    contextWindow: 1048576,
+    maxTokens: 65535,
+  },
+  {
+    id: "anthropic/claude-opus-4.5",
+    name: "Claude Opus 4.5",
+    reasoning: false,
+    api: "openai-completions",
+    input: ["text", "image"],
+    cost: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+    },
+    contextWindow: 200000,
+    maxTokens: 64000,
+  },
+  {
+    id: "anthropic/claude-sonnet-4.5:thinking",
+    name: "Claude Sonnet 4.5 Thinking",
+    reasoning: true,
+    api: "openai-completions",
+    input: ["text", "image"],
+    cost: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+    },
+    contextWindow: 200000,
+    maxTokens: 64000,
+  },
+  {
+    id: "anthropic/claude-haiku-4.5",
+    name: "Claude Haiku 4.5",
+    reasoning: false,
+    api: "openai-completions",
+    input: ["text", "image"],
+    cost: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+    },
+    contextWindow: 200000,
+    maxTokens: 64000,
+  },
+  {
+    id: "anthropic/claude-sonnet-4.5",
+    name: "Claude Sonnet 4.5",
+    reasoning: false,
+    api: "openai-completions",
+    input: ["text", "image"],
+    cost: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+    },
+    contextWindow: 200000,
+    maxTokens: 64000,
+  },
+  {
+    id: "anthropic/claude-haiku-4.5:thinking",
+    name: "Claude Haiku 4.5 Thinking",
+    reasoning: true,
+    api: "openai-completions",
+    input: ["text", "image"],
+    cost: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+    },
+    contextWindow: 200000,
+    maxTokens: 64000,
+  },
+  {
+    id: "anthropic/claude-opus-4.6",
+    name: "Claude Opus 4.6",
+    reasoning: false,
+    api: "openai-completions",
+    input: ["text"],
+    cost: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+    },
+    contextWindow: 1000000,
+    maxTokens: 128000,
+  },
+  {
+    id: "anthropic/claude-sonnet-4.6",
+    name: "Claude Sonnet 4.6",
+    reasoning: false,
+    api: "openai-completions",
+    input: ["text"],
+    cost: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+    },
+    contextWindow: 200000,
+    maxTokens: 64000,
+  },
+  {
+    id: "openai/gpt-5-nano",
+    name: "GPT-5-Nano",
+    reasoning: false,
+    api: "openai-completions",
+    input: ["text", "image"],
+    cost: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+    },
+    contextWindow: 400000,
+    maxTokens: 128000,
+  },
+  {
+    id: "anthropic/claude-opus-4",
+    name: "Claude Opus 4",
+    reasoning: false,
+    api: "openai-completions",
+    input: ["text", "image"],
+    cost: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+    },
+    contextWindow: 200000,
+    maxTokens: 32000,
+  },
+  {
+    id: "anthropic/claude-opus-4.1",
+    name: "Claude Opus 4.1",
+    reasoning: false,
+    api: "openai-completions",
+    input: ["text", "image"],
+    cost: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+    },
+    contextWindow: 200000,
+    maxTokens: 32000,
+  },
+];
 
+export async function getShengSuanYunModels(): Promise<ModelDefinitionConfig[]> {
+  // Skip API network discovery in test environment
+  if (process.env.NODE_ENV === "test" || process.env.VITEST) {
+    return DEFAULT_SHENGSUANYUN_MODELS;
+  }
   try {
     const res = await fetch(`${SHENGSUANYUN_BASE_URL}/models`, {
       signal: AbortSignal.timeout(30000),
     });
     if (!res.ok) {
-      return [];
+      // Return default models if API call fails
+      return DEFAULT_SHENGSUANYUN_MODELS;
     }
     const data = (await res.json()) as ShengSuanYunModelsResponse;
     if (!data.success || !Array.isArray(data.data) || data.data.length === 0) {
-      return [];
+      // Return default models if response is invalid
+      return DEFAULT_SHENGSUANYUN_MODELS;
     }
 
     const models: ModelDefinitionConfig[] = [];
@@ -165,10 +335,12 @@ export async function getShengSuanYunModels(): Promise<ModelDefinitionConfig[]> 
         maxTokens: apiModel.max_tokens || 8192,
       });
     }
-    return models;
+    // If API returned models, use them; otherwise fallback to defaults
+    return models.length > 0 ? models : DEFAULT_SHENGSUANYUN_MODELS;
   } catch (error) {
     console.warn(`[shengsuanyun-models] failed: ${String(error)}`);
-    return [];
+    // Return default models if fetch throws
+    return DEFAULT_SHENGSUANYUN_MODELS;
   }
 }
 
