@@ -1,6 +1,5 @@
 import { Type, type TSchema } from "@sinclair/typebox";
 import type { OpenClawConfig } from "../../../config/config.ts";
-import type { AnyAgentTool } from "../common.ts";
 import { loadConfig } from "../../../config/config.ts";
 import { resolveApiKeyForProvider } from "../../model-auth.ts";
 import {
@@ -8,6 +7,7 @@ import {
   SHENGSUANYUN_BASE_URL,
   TaskRes,
 } from "../../shengsuanyun-models.ts";
+import type { AnyAgentTool } from "../common.ts";
 import { readStringParam, readStringArrayParam, readNumberParam } from "../common.ts";
 import { createGemini3ProImageTool } from "./gemini3pro-image-preview.ts";
 import { createZImageTurboTool } from "./zimage-turbo.ts";
@@ -99,15 +99,26 @@ async function generate(
 }
 
 function sanitizeToolName(name: string): string {
-  return name.replace(/[^a-zA-Z0-9_.-]/g, "_").replace(/_+/g, "_");
+  return name.replace(/[^a-zA-Z0-9_-]/g, "_").replace(/_+/g, "_");
 }
 
 async function loadShengSuanYunTools(opts?: { config?: OpenClawConfig }): Promise<AnyAgentTool[]> {
   const models = await getShengSuanYunModalityModels();
   const tools: AnyAgentTool[] = [];
+  const seenNames = new Set<string>();
   for (const model of models) {
     const label = `${model.company_name} ${model.model_name} Generate tool`;
-    const name = sanitizeToolName(`${model.company_name}_${model.model_name}`);
+    const baseName = sanitizeToolName(`${model.company_name}_${model.model_name}`);
+
+    // Ensure unique tool names by appending a counter if needed
+    let name = baseName;
+    let counter = 1;
+    while (seenNames.has(name)) {
+      name = `${baseName}_${counter}`;
+      counter++;
+    }
+    seenNames.add(name);
+
     const description = `Generate content using the ${model.company_name} ${model.model_name} model. ${model.desc}`;
     let inputSchema: JsonSchema = {};
     try {
@@ -134,9 +145,7 @@ async function loadShengSuanYunTools(opts?: { config?: OpenClawConfig }): Promis
           if (!schema.properties) {
             return;
           }
-          for (const [key, prop] of Object.entries(
-            schema.properties as Record<string, JsonSchema>,
-          )) {
+          for (const [key, prop] of Object.entries(schema.properties)) {
             const isRequired = schema.required?.includes(key);
 
             if (prop.type === "array") {
@@ -249,7 +258,7 @@ export function generateTypebox(schema: JsonSchema): TSchema {
       }
 
       const props: Record<string, TSchema> = {};
-      for (const [key, value] of Object.entries(node.properties as Record<string, JsonSchema>)) {
+      for (const [key, value] of Object.entries(node.properties)) {
         const isRequired =
           node.required && Array.isArray(node.required) && node.required.includes(key);
         const propSchema = parse(value);
@@ -289,6 +298,14 @@ export function generateTypebox(schema: JsonSchema): TSchema {
 // Fallback tools that are always available
 let cachedTools: AnyAgentTool[] | null = null;
 let loadPromise: Promise<AnyAgentTool[]> | null = null;
+let fallbackToolsCache: AnyAgentTool[] | null = null;
+
+function getFallbackTools(opts?: { config?: OpenClawConfig }): AnyAgentTool[] {
+  if (fallbackToolsCache === null) {
+    fallbackToolsCache = [createZImageTurboTool(opts), createGemini3ProImageTool(opts)];
+  }
+  return fallbackToolsCache;
+}
 
 export async function preloadShengSuanYunTools(opts?: { config?: OpenClawConfig }): Promise<void> {
   if (cachedTools !== null) {
@@ -301,14 +318,13 @@ export async function preloadShengSuanYunTools(opts?: { config?: OpenClawConfig 
   }
   loadPromise = loadShengSuanYunTools(opts)
     .then((tools) => {
-      const fallbackTools = [createZImageTurboTool(opts), createGemini3ProImageTool(opts)];
+      const fallbackTools = getFallbackTools(opts);
       cachedTools = [...tools, ...fallbackTools];
       return cachedTools;
     })
     .catch((err) => {
       console.error("[shengsuanyun-generate] Failed to load tools, using fallback only:", err);
-      const fallbackTools = [createZImageTurboTool(opts), createGemini3ProImageTool(opts)];
-      cachedTools = fallbackTools;
+      cachedTools = getFallbackTools(opts);
       return cachedTools;
     })
     .finally(() => {
@@ -324,6 +340,5 @@ export function createGenerateTools(opts?: { config?: OpenClawConfig }): AnyAgen
   preloadShengSuanYunTools(opts).catch((err) => {
     console.error("[shengsuanyun-generate] Background preload failed:", err);
   });
-  const fallbackTools = [createZImageTurboTool(opts), createGemini3ProImageTool(opts)];
-  return fallbackTools;
+  return getFallbackTools(opts);
 }
