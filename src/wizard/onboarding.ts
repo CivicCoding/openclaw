@@ -15,45 +15,38 @@ import {
 import type { RuntimeEnv } from "../runtime.js";
 import { defaultRuntime } from "../runtime.js";
 import { resolveUserPath } from "../utils.js";
+import { createI18nContext, type I18nContext, type Locale } from "./i18n/index.js";
 import type { QuickstartGatewayDefaults, WizardFlow } from "./onboarding.types.js";
 import { WizardCancelledError, type WizardPrompter } from "./prompts.js";
+
+async function promptLanguageSelection(params: { prompter: WizardPrompter }): Promise<Locale> {
+  const locale = await params.prompter.select({
+    message: "Select your language / 选择语言",
+    options: [
+      { value: "en" as const, label: "English" },
+      { value: "zh-CN" as const, label: "中文 (简体)" },
+    ],
+    initialValue: "en" as const,
+  });
+  return locale;
+}
 
 async function requireRiskAcknowledgement(params: {
   opts: OnboardOptions;
   prompter: WizardPrompter;
+  i18n: I18nContext;
 }) {
   if (params.opts.acceptRisk === true) {
     return;
   }
 
   await params.prompter.note(
-    [
-      "Security warning — please read.",
-      "",
-      "OpenClaw is a hobby project and still in beta. Expect sharp edges.",
-      "This bot can read files and run actions if tools are enabled.",
-      "A bad prompt can trick it into doing unsafe things.",
-      "",
-      "If you’re not comfortable with basic security and access control, don’t run OpenClaw.",
-      "Ask someone experienced to help before enabling tools or exposing it to the internet.",
-      "",
-      "Recommended baseline:",
-      "- Pairing/allowlists + mention gating.",
-      "- Sandbox + least-privilege tools.",
-      "- Keep secrets out of the agent’s reachable filesystem.",
-      "- Use the strongest available model for any bot with tools or untrusted inboxes.",
-      "",
-      "Run regularly:",
-      "openclaw security audit --deep",
-      "openclaw security audit --fix",
-      "",
-      "Must read: https://docs.openclaw.ai/gateway/security",
-    ].join("\n"),
-    "Security",
+    params.i18n.t.security.warning.join("\n"),
+    params.i18n.t.security.header,
   );
 
   const ok = await params.prompter.confirm({
-    message: "I understand this is powerful and inherently risky. Continue?",
+    message: params.i18n.t.security.confirm,
     initialValue: false,
   });
   if (!ok) {
@@ -68,14 +61,19 @@ export async function runOnboardingWizard(
 ) {
   const onboardHelpers = await import("../commands/onboard-helpers.js");
   onboardHelpers.printWizardHeader(runtime);
-  await prompter.intro("OpenClaw onboarding");
-  await requireRiskAcknowledgement({ opts, prompter });
+
+  // Add language selection step
+  const locale = await promptLanguageSelection({ prompter });
+  const i18n = createI18nContext(locale);
+
+  await prompter.intro(i18n.t.wizard.intro);
+  await requireRiskAcknowledgement({ opts, prompter, i18n });
 
   const snapshot = await readConfigFileSnapshot();
   let baseConfig: OpenClawConfig = snapshot.valid ? snapshot.config : {};
 
   if (snapshot.exists && !snapshot.valid) {
-    await prompter.note(onboardHelpers.summarizeExistingConfig(baseConfig), "Invalid config");
+    await prompter.note(onboardHelpers.summarizeExistingConfig(baseConfig), i18n.t.config.invalid);
     if (snapshot.issues.length > 0) {
       await prompter.note(
         [
@@ -93,8 +91,8 @@ export async function runOnboardingWizard(
     return;
   }
 
-  const quickstartHint = `Configure details later via ${formatCliCommand("openclaw configure")}.`;
-  const manualHint = "Configure port, network, Tailscale, and auth options.";
+  const quickstartHint = i18n.t.flow.quickstart.hint;
+  const manualHint = i18n.t.flow.advanced.hint;
   const explicitFlowRaw = opts.flow?.trim();
   const normalizedExplicitFlow = explicitFlowRaw === "manual" ? "advanced" : explicitFlowRaw;
   if (
@@ -113,10 +111,10 @@ export async function runOnboardingWizard(
   let flow: WizardFlow =
     explicitFlow ??
     (await prompter.select({
-      message: "Onboarding mode",
+      message: i18n.t.flow.message,
       options: [
-        { value: "quickstart", label: "QuickStart", hint: quickstartHint },
-        { value: "advanced", label: "Manual", hint: manualHint },
+        { value: "quickstart", label: i18n.t.flow.quickstart.label, hint: quickstartHint },
+        { value: "advanced", label: i18n.t.flow.advanced.label, hint: manualHint },
       ],
       initialValue: "quickstart",
     }));
@@ -124,7 +122,7 @@ export async function runOnboardingWizard(
   if (opts.mode === "remote" && flow === "quickstart") {
     await prompter.note(
       "QuickStart only supports local gateways. Switching to Manual mode.",
-      "QuickStart",
+      i18n.t.gateway.quickstartNote,
     );
     flow = "advanced";
   }
@@ -132,15 +130,15 @@ export async function runOnboardingWizard(
   if (snapshot.exists) {
     await prompter.note(
       onboardHelpers.summarizeExistingConfig(baseConfig),
-      "Existing config detected",
+      i18n.t.config.existingDetected,
     );
 
     const action = await prompter.select({
-      message: "Config handling",
+      message: i18n.t.config.handlingMessage,
       options: [
-        { value: "keep", label: "Use existing values" },
-        { value: "modify", label: "Update values" },
-        { value: "reset", label: "Reset" },
+        { value: "keep", label: i18n.t.config.keep },
+        { value: "modify", label: i18n.t.config.modify },
+        { value: "reset", label: i18n.t.config.reset },
       ],
     });
 
@@ -148,16 +146,16 @@ export async function runOnboardingWizard(
       const workspaceDefault =
         baseConfig.agents?.defaults?.workspace ?? onboardHelpers.DEFAULT_WORKSPACE;
       const resetScope = (await prompter.select({
-        message: "Reset scope",
+        message: i18n.t.config.resetScope,
         options: [
-          { value: "config", label: "Config only" },
+          { value: "config", label: i18n.t.config.configOnly },
           {
             value: "config+creds+sessions",
-            label: "Config + creds + sessions",
+            label: i18n.t.config.configCredsSessions,
           },
           {
             value: "full",
-            label: "Full reset (config + creds + sessions + workspace)",
+            label: i18n.t.config.fullReset,
           },
         ],
       })) as ResetScope;
@@ -220,54 +218,54 @@ export async function runOnboardingWizard(
   if (flow === "quickstart") {
     const formatBind = (value: "loopback" | "lan" | "auto" | "custom" | "tailnet") => {
       if (value === "loopback") {
-        return "Loopback (127.0.0.1)";
+        return i18n.t.gateway.bindLoopback;
       }
       if (value === "lan") {
-        return "LAN";
+        return i18n.t.gateway.bindLan;
       }
       if (value === "custom") {
-        return "Custom IP";
+        return i18n.t.gateway.bindCustom;
       }
       if (value === "tailnet") {
-        return "Tailnet (Tailscale IP)";
+        return i18n.t.gateway.bindTailnet;
       }
-      return "Auto";
+      return i18n.t.gateway.bindAuto;
     };
     const formatAuth = (value: GatewayAuthChoice) => {
       if (value === "token") {
-        return "Token (default)";
+        return i18n.t.gateway.authToken;
       }
-      return "Password";
+      return i18n.t.gateway.authPassword;
     };
     const formatTailscale = (value: "off" | "serve" | "funnel") => {
       if (value === "off") {
-        return "Off";
+        return i18n.t.gateway.tailscaleOff;
       }
       if (value === "serve") {
-        return "Serve";
+        return i18n.t.gateway.tailscaleServe;
       }
-      return "Funnel";
+      return i18n.t.gateway.tailscaleFunnel;
     };
     const quickstartLines = quickstartGateway.hasExisting
       ? [
-          "Keeping your current gateway settings:",
-          `Gateway port: ${quickstartGateway.port}`,
-          `Gateway bind: ${formatBind(quickstartGateway.bind)}`,
+          i18n.t.gateway.keepingSettings,
+          `${i18n.t.gateway.port}: ${quickstartGateway.port}`,
+          `${i18n.t.gateway.bind}: ${formatBind(quickstartGateway.bind)}`,
           ...(quickstartGateway.bind === "custom" && quickstartGateway.customBindHost
-            ? [`Gateway custom IP: ${quickstartGateway.customBindHost}`]
+            ? [`${i18n.t.gateway.customIp}: ${quickstartGateway.customBindHost}`]
             : []),
-          `Gateway auth: ${formatAuth(quickstartGateway.authMode)}`,
-          `Tailscale exposure: ${formatTailscale(quickstartGateway.tailscaleMode)}`,
-          "Direct to chat channels.",
+          `${i18n.t.gateway.auth}: ${formatAuth(quickstartGateway.authMode)}`,
+          `${i18n.t.gateway.tailscale}: ${formatTailscale(quickstartGateway.tailscaleMode)}`,
+          i18n.t.gateway.directToChannels,
         ]
       : [
-          `Gateway port: ${DEFAULT_GATEWAY_PORT}`,
-          "Gateway bind: Loopback (127.0.0.1)",
-          "Gateway auth: Token (default)",
-          "Tailscale exposure: Off",
-          "Direct to chat channels.",
+          `${i18n.t.gateway.port}: ${DEFAULT_GATEWAY_PORT}`,
+          `${i18n.t.gateway.bind}: ${i18n.t.gateway.bindLoopback}`,
+          `${i18n.t.gateway.auth}: ${i18n.t.gateway.authToken}`,
+          `${i18n.t.gateway.tailscale}: ${i18n.t.gateway.tailscaleOff}`,
+          i18n.t.gateway.directToChannels,
         ];
-    await prompter.note(quickstartLines.join("\n"), "QuickStart");
+    await prompter.note(quickstartLines.join("\n"), i18n.t.gateway.quickstartNote);
   }
 
   const localPort = resolveGatewayPort(baseConfig);
@@ -290,23 +288,23 @@ export async function runOnboardingWizard(
     (flow === "quickstart"
       ? "local"
       : ((await prompter.select({
-          message: "What do you want to set up?",
+          message: i18n.t.gateway.modeMessage,
           options: [
             {
               value: "local",
-              label: "Local gateway (this machine)",
+              label: i18n.t.gateway.local.label,
               hint: localProbe.ok
-                ? `Gateway reachable (${localUrl})`
-                : `No gateway detected (${localUrl})`,
+                ? `${i18n.t.gateway.local.hintReachable} (${localUrl})`
+                : `${i18n.t.gateway.local.hintUnreachable} (${localUrl})`,
             },
             {
               value: "remote",
-              label: "Remote gateway (info-only)",
+              label: i18n.t.gateway.remote.label,
               hint: !remoteUrl
-                ? "No remote URL configured yet"
+                ? i18n.t.gateway.remote.hintNoUrl
                 : remoteProbe?.ok
-                  ? `Gateway reachable (${remoteUrl})`
-                  : `Configured but unreachable (${remoteUrl})`,
+                  ? `${i18n.t.gateway.remote.hintReachable} (${remoteUrl})`
+                  : `${i18n.t.gateway.remote.hintUnreachable} (${remoteUrl})`,
             },
           ],
         })) as OnboardMode));
@@ -318,7 +316,7 @@ export async function runOnboardingWizard(
     nextConfig = onboardHelpers.applyWizardMetadata(nextConfig, { command: "onboard", mode });
     await writeConfigFile(nextConfig);
     logConfigUpdated(runtime);
-    await prompter.outro("Remote gateway configured.");
+    await prompter.outro(i18n.t.gateway.configured);
     return;
   }
 
@@ -327,7 +325,7 @@ export async function runOnboardingWizard(
     (flow === "quickstart"
       ? (baseConfig.agents?.defaults?.workspace ?? onboardHelpers.DEFAULT_WORKSPACE)
       : await prompter.text({
-          message: "Workspace directory",
+          message: i18n.t.workspace.message,
           initialValue: baseConfig.agents?.defaults?.workspace ?? onboardHelpers.DEFAULT_WORKSPACE,
         }));
 
@@ -410,7 +408,7 @@ export async function runOnboardingWizard(
   const settings = gateway.settings;
 
   if (opts.skipChannels ?? opts.skipProviders) {
-    await prompter.note("Skipping channel setup.", "Channels");
+    await prompter.note(i18n.t.channels.skipping, i18n.t.channels.header);
   } else {
     const { listChannelPlugins } = await import("../channels/plugins/index.js");
     const { setupChannels } = await import("../commands/onboard-channels.js");
@@ -426,6 +424,7 @@ export async function runOnboardingWizard(
       skipDmPolicyPrompt: flow === "quickstart",
       skipConfirm: flow === "quickstart",
       quickstartDefaults: flow === "quickstart",
+      i18n,
     });
   }
 
@@ -437,15 +436,15 @@ export async function runOnboardingWizard(
   });
 
   if (opts.skipSkills) {
-    await prompter.note("Skipping skills setup.", "Skills");
+    await prompter.note(i18n.t.skills.skipping, i18n.t.skills.header);
   } else {
     const { setupSkills } = await import("../commands/onboard-skills.js");
-    nextConfig = await setupSkills(nextConfig, workspaceDir, runtime, prompter);
+    nextConfig = await setupSkills(nextConfig, workspaceDir, runtime, prompter, i18n);
   }
 
   // Setup hooks (session memory on /new)
   const { setupInternalHooks } = await import("../commands/onboard-hooks.js");
-  nextConfig = await setupInternalHooks(nextConfig, runtime, prompter);
+  nextConfig = await setupInternalHooks(nextConfig, runtime, prompter, i18n);
 
   nextConfig = onboardHelpers.applyWizardMetadata(nextConfig, { command: "onboard", mode });
   await writeConfigFile(nextConfig);
@@ -460,6 +459,7 @@ export async function runOnboardingWizard(
     settings,
     prompter,
     runtime,
+    i18n,
   });
   if (launchedTui) {
     return;

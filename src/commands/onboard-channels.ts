@@ -16,6 +16,7 @@ import { enablePluginInConfig } from "../plugins/enable.js";
 import { DEFAULT_ACCOUNT_ID, normalizeAccountId } from "../routing/session-key.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { formatDocsLink } from "../terminal/links.js";
+import { createI18nContext, type I18nContext } from "../wizard/i18n/index.js";
 import type { WizardPrompter, WizardSelectOption } from "../wizard/prompts.js";
 import type { ChannelChoice } from "./onboard-types.js";
 import {
@@ -50,23 +51,26 @@ async function promptConfiguredAction(params: {
   label: string;
   supportsDisable: boolean;
   supportsDelete: boolean;
+  i18n?: I18nContext;
 }): Promise<ConfiguredChannelAction> {
-  const { prompter, label, supportsDisable, supportsDelete } = params;
+  const { prompter, label, supportsDisable, supportsDelete, i18n } = params;
+  const t = i18n?.t.channels ?? createI18nContext("en").t.channels;
+
   const updateOption: WizardSelectOption<ConfiguredChannelAction> = {
     value: "update",
-    label: "Modify settings",
+    label: t.actions.modify,
   };
   const disableOption: WizardSelectOption<ConfiguredChannelAction> = {
     value: "disable",
-    label: "Disable (keeps config)",
+    label: `${t.actions.disable} (${t.actions.disableHint})`,
   };
   const deleteOption: WizardSelectOption<ConfiguredChannelAction> = {
     value: "delete",
-    label: "Delete config",
+    label: t.actions.delete,
   };
   const skipOption: WizardSelectOption<ConfiguredChannelAction> = {
     value: "skip",
-    label: "Skip (leave as-is)",
+    label: `${t.actions.skip} (${t.actions.skipHint})`,
   };
   const options: Array<WizardSelectOption<ConfiguredChannelAction>> = [
     updateOption,
@@ -75,7 +79,7 @@ async function promptConfiguredAction(params: {
     skipOption,
   ];
   return await prompter.select({
-    message: `${label} already configured. What do you want to do?`,
+    message: `${label} ${t.alreadyConfigured}`,
     options,
     initialValue: "update",
   });
@@ -86,8 +90,10 @@ async function promptRemovalAccountId(params: {
   prompter: WizardPrompter;
   label: string;
   channel: ChannelChoice;
+  i18n?: I18nContext;
 }): Promise<string> {
-  const { cfg, prompter, label, channel } = params;
+  const { cfg, prompter, label, channel, i18n } = params;
+  const t = i18n?.t.channels ?? createI18nContext("en").t.channels;
   const plugin = getChannelPlugin(channel);
   if (!plugin) {
     return DEFAULT_ACCOUNT_ID;
@@ -98,7 +104,7 @@ async function promptRemovalAccountId(params: {
     return defaultAccountId;
   }
   const selected = await prompter.select({
-    message: `${label} account`,
+    message: `${label} ${t.account}`,
     options: accountIds.map((accountId) => ({
       value: accountId,
       label: formatAccountLabel(accountId),
@@ -294,6 +300,9 @@ export async function setupChannels(
   prompter: WizardPrompter,
   options?: SetupChannelsOptions,
 ): Promise<OpenClawConfig> {
+  // Get i18n context, defaulting to English if not provided
+  const i18n = options?.i18n ?? createI18nContext("en");
+
   let next = cfg;
   const forceAllowFromChannels = new Set(options?.forceAllowFromChannels ?? []);
   const accountOverrides: Partial<Record<ChannelChoice, string>> = {
@@ -312,7 +321,7 @@ export async function setupChannels(
   const shouldConfigure = options?.skipConfirm
     ? true
     : await prompter.confirm({
-        message: "Configure chat channels now?",
+        message: i18n.t.channels.configureNow,
         initialValue: true,
       });
   if (!shouldConfigure) {

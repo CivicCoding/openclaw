@@ -3,22 +3,19 @@ import { formatCliCommand } from "../cli/command-format.js";
 import type { OpenClawConfig } from "../config/config.js";
 import { buildWorkspaceHookStatus } from "../hooks/hooks-status.js";
 import type { RuntimeEnv } from "../runtime.js";
+import { createI18nContext, type I18nContext } from "../wizard/i18n/index.js";
 import type { WizardPrompter } from "../wizard/prompts.js";
 
 export async function setupInternalHooks(
   cfg: OpenClawConfig,
   runtime: RuntimeEnv,
   prompter: WizardPrompter,
+  i18n?: I18nContext,
 ): Promise<OpenClawConfig> {
-  await prompter.note(
-    [
-      "Hooks let you automate actions when agent commands are issued.",
-      "Example: Save session context to memory when you issue /new or /reset.",
-      "",
-      "Learn more: https://docs.openclaw.ai/automation/hooks",
-    ].join("\n"),
-    "Hooks",
-  );
+  // Get i18n context, defaulting to English if not provided
+  const t = i18n?.t.hooks ?? createI18nContext("en").t.hooks;
+
+  await prompter.note(t.intro.join("\n"), t.header);
 
   // Discover available hooks using the hook discovery system
   const workspaceDir = resolveAgentWorkspaceDir(cfg, resolveDefaultAgentId(cfg));
@@ -28,17 +25,14 @@ export async function setupInternalHooks(
   const eligibleHooks = report.hooks.filter((h) => h.eligible);
 
   if (eligibleHooks.length === 0) {
-    await prompter.note(
-      "No eligible hooks found. You can configure hooks later in your config.",
-      "No Hooks Available",
-    );
+    await prompter.note(t.noHooksAvailable.message, t.noHooksAvailable.title);
     return cfg;
   }
 
   const toEnable = await prompter.multiselect({
-    message: "Enable hooks?",
+    message: t.enableHooks,
     options: [
-      { value: "__skip__", label: "Skip for now" },
+      { value: "__skip__", label: t.skipForNow },
       ...eligibleHooks.map((hook) => ({
         value: hook.name,
         label: `${hook.emoji ?? "🔗"} ${hook.name}`,
@@ -69,16 +63,17 @@ export async function setupInternalHooks(
     },
   };
 
+  const hooksWord = selected.length > 1 ? t.configured.hooks : t.configured.hooks;
   await prompter.note(
     [
-      `Enabled ${selected.length} hook${selected.length > 1 ? "s" : ""}: ${selected.join(", ")}`,
+      `${t.configured.enabled} ${selected.length} ${hooksWord}: ${selected.join(", ")}`,
       "",
-      "You can manage hooks later with:",
-      `  ${formatCliCommand("openclaw hooks list")}`,
-      `  ${formatCliCommand("openclaw hooks enable <name>")}`,
-      `  ${formatCliCommand("openclaw hooks disable <name>")}`,
+      t.configured.manageHooks,
+      `  ${formatCliCommand(t.configured.list)}`,
+      `  ${formatCliCommand(t.configured.enable)}`,
+      `  ${formatCliCommand(t.configured.disable)}`,
     ].join("\n"),
-    "Hooks Configured",
+    t.configured.title,
   );
 
   return next;
