@@ -1,6 +1,7 @@
 import { ensureAuthProfileStore } from "../agents/auth-profiles.js";
 import type { OpenClawConfig, GatewayAuthConfig } from "../config/config.js";
 import type { RuntimeEnv } from "../runtime.js";
+import { createI18nContext } from "../wizard/i18n/index.js";
 import type { WizardPrompter } from "../wizard/prompts.js";
 import { promptAuthChoiceGrouped } from "./auth-choice-prompt.js";
 import { applyAuthChoice, resolvePreferredProviderForAuthChoice } from "./auth-choice.js";
@@ -85,6 +86,7 @@ export async function promptAuthConfig(
   });
 
   let next = cfg;
+  const i18n = createI18nContext("en");
   if (authChoice === "custom-api-key") {
     const customResult = await promptCustomApiConfig({ prompter, runtime, config: next });
     next = customResult.config;
@@ -95,6 +97,7 @@ export async function promptAuthConfig(
       prompter,
       runtime,
       setDefaultModel: true,
+      i18n,
     });
     next = applied.config;
   } else {
@@ -104,6 +107,7 @@ export async function promptAuthConfig(
       allowKeep: true,
       ignoreAllowlist: true,
       preferredProvider: resolvePreferredProviderForAuthChoice(authChoice),
+      i18n,
     });
     if (modelSelection.config) {
       next = modelSelection.config;
@@ -123,6 +127,7 @@ export async function promptAuthConfig(
       allowedKeys: anthropicOAuth ? ANTHROPIC_OAUTH_MODEL_KEYS : undefined,
       initialSelections: anthropicOAuth ? ["anthropic/claude-sonnet-4-6"] : undefined,
       message: anthropicOAuth ? "Anthropic OAuth models" : undefined,
+      i18n,
     });
     if (allowlistSelection.models) {
       next = applyModelAllowlist(next, allowlistSelection.models);

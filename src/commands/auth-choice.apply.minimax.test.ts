@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resolveAgentModelPrimaryValue } from "../config/model-input.js";
+import { createI18nContext } from "../wizard/i18n/index.js";
 import type { WizardPrompter } from "../wizard/prompts.js";
 import { applyAuthChoiceMiniMax } from "./auth-choice.apply.minimax.js";
 import {
@@ -64,6 +65,7 @@ describe("applyAuthChoiceMiniMax", () => {
       prompter: createMinimaxPrompter(),
       runtime: createExitThrowingRuntime(),
       setDefaultModel: true,
+      i18n: createI18nContext("en"),
     });
 
     expect(result).toBeNull();
@@ -104,6 +106,7 @@ describe("applyAuthChoiceMiniMax", () => {
         prompter: createMinimaxPrompter({ text, confirm }),
         runtime: createExitThrowingRuntime(),
         setDefaultModel: true,
+        i18n: createI18nContext("en"),
         opts: {
           tokenProvider,
           token,
@@ -140,6 +143,7 @@ describe("applyAuthChoiceMiniMax", () => {
       prompter: createMinimaxPrompter({ text, confirm }),
       runtime: createExitThrowingRuntime(),
       setDefaultModel: true,
+      i18n: createI18nContext("en"),
     });
 
     expect(result).not.toBeNull();
@@ -170,6 +174,7 @@ describe("applyAuthChoiceMiniMax", () => {
       prompter: createMinimaxPrompter({ text, confirm }),
       runtime: createExitThrowingRuntime(),
       setDefaultModel: true,
+      i18n: createI18nContext("en"),
       opts: {
         tokenProvider: "minimax",
         token: "mm-lightning-token",

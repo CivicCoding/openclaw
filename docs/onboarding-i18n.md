@@ -54,44 +54,6 @@ Select your language / 选择语言
 
 选择语言后，所有后续的提示和消息都会使用所选语言显示。
 
-### 添加新的翻译
-
-1. 在 `src/wizard/i18n/types.ts` 中添加新的翻译键：
-
-```typescript
-export interface OnboardingTranslations {
-  // ... existing keys
-  newSection: {
-    message: string;
-    hint: string;
-  };
-}
-```
-
-2. 在 `src/wizard/i18n/locales/en.ts` 中添加英文翻译：
-
-```typescript
-export const en: OnboardingTranslations = {
-  // ... existing translations
-  newSection: {
-    message: "Your message here",
-    hint: "Your hint here",
-  },
-};
-```
-
-3. 在 `src/wizard/i18n/locales/zh-CN.ts` 中添加中文翻译：
-
-```typescript
-export const zh_CN: OnboardingTranslations = {
-  // ... existing translations
-  newSection: {
-    message: "您的消息",
-    hint: "您的提示",
-  },
-};
-```
-
 ### 在代码中使用翻译
 
 ```typescript

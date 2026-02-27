@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resolveAgentModelPrimaryValue } from "../config/model-input.js";
+import { createI18nContext } from "../wizard/i18n/index.js";
 import type { WizardPrompter } from "../wizard/prompts.js";
 import { applyAuthChoiceHuggingface } from "./auth-choice.apply.huggingface.js";
 import {
@@ -61,6 +62,7 @@ describe("applyAuthChoiceHuggingface", () => {
       prompter: {} as WizardPrompter,
       runtime: createExitThrowingRuntime(),
       setDefaultModel: false,
+      i18n: createI18nContext("en"),
     });
     expect(result).toBeNull();
   });
@@ -81,6 +83,7 @@ describe("applyAuthChoiceHuggingface", () => {
       prompter,
       runtime,
       setDefaultModel: true,
+      i18n: createI18nContext("en"),
     });
 
     expect(result).not.toBeNull();
@@ -138,6 +141,7 @@ describe("applyAuthChoiceHuggingface", () => {
       prompter,
       runtime,
       setDefaultModel: true,
+      i18n: createI18nContext("en"),
       opts: {
         tokenProvider,
         token,
@@ -173,6 +177,7 @@ describe("applyAuthChoiceHuggingface", () => {
       prompter,
       runtime,
       setDefaultModel: true,
+      i18n: createI18nContext("en"),
     });
 
     expect(result).not.toBeNull();

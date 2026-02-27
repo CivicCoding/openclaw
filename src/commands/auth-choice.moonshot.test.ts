@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resolveAgentModelPrimaryValue } from "../config/model-input.js";
+import { createI18nContext } from "../wizard/i18n/index.js";
 import type { WizardPrompter } from "../wizard/prompts.js";
 import { applyAuthChoice } from "./auth-choice.js";
 import {
@@ -48,6 +49,7 @@ describe("applyAuthChoice (moonshot)", () => {
       prompter,
       runtime,
       setDefaultModel: params.setDefaultModel,
+      i18n: createI18nContext("en"),
     });
     return { result, text };
   }

@@ -1,5 +1,6 @@
 import type { OpenClawConfig } from "../config/config.js";
 import type { RuntimeEnv } from "../runtime.js";
+import { type I18nContext } from "../wizard/i18n/index.js";
 import type { WizardPrompter } from "../wizard/prompts.js";
 import { applyAuthChoiceAnthropic } from "./auth-choice.apply.anthropic.js";
 import { applyAuthChoiceApiProviders } from "./auth-choice.apply.api-providers.js";
@@ -25,6 +26,7 @@ export type ApplyAuthChoiceParams = {
   setDefaultModel: boolean;
   agentId?: string;
   opts?: Partial<OnboardOptions>;
+  i18n: I18nContext;
 };
 
 export type ApplyAuthChoiceResult = {

@@ -3,6 +3,7 @@ import {
   createAuthChoiceDefaultModelApplier,
   createAuthChoiceModelStateBridge,
   ensureApiKeyFromOptionEnvOrPrompt,
+  normalizeSecretInputModeInput,
 } from "./auth-choice.apply-helpers.js";
 import type { ApplyAuthChoiceParams, ApplyAuthChoiceResult } from "./auth-choice.apply.js";
 import { applyAuthChoicePluginProvider } from "./auth-choice.apply.plugin-provider.js";
@@ -30,7 +31,9 @@ export async function applyAuthChoiceMiniMax(
       getAgentModelOverride: () => agentModelOverride,
       setAgentModelOverride: (model) => (agentModelOverride = model),
     }),
+    params.i18n,
   );
+  const requestedSecretInputMode = normalizeSecretInputModeInput(params.opts?.secretInputMode);
   const ensureMinimaxApiKey = async (opts: {
     profileId: string;
     promptMessage: string;
@@ -38,6 +41,8 @@ export async function applyAuthChoiceMiniMax(
     await ensureApiKeyFromOptionEnvOrPrompt({
       token: params.opts?.token,
       tokenProvider: params.opts?.tokenProvider,
+      secretInputMode: requestedSecretInputMode,
+      config: nextConfig,
       expectedProviders: ["minimax", "minimax-cn"],
       provider: "minimax",
       envLabel: "MINIMAX_API_KEY",
@@ -45,7 +50,9 @@ export async function applyAuthChoiceMiniMax(
       normalize: normalizeApiKeyInput,
       validate: validateApiKeyInput,
       prompter: params.prompter,
-      setCredential: async (apiKey) => setMinimaxApiKey(apiKey, params.agentDir, opts.profileId),
+      setCredential: async (apiKey, mode) =>
+        setMinimaxApiKey(apiKey, params.agentDir, opts.profileId, { secretInputMode: mode }),
+      i18n: params.i18n,
     });
   };
   const applyMinimaxApiVariant = async (opts: {

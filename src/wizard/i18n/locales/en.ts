@@ -1,6 +1,4 @@
-import type { OnboardingTranslations } from "../types.js";
-
-export const en: OnboardingTranslations = {
+export const en: Record<string, unknown> = {
   security: {
     header: "Security",
     warning: [
@@ -344,5 +342,125 @@ export const en: OnboardingTranslations = {
         "Onboarding complete. Web UI seeded in the background; open it anytime with the dashboard link above.",
       complete: "Onboarding complete. Use the dashboard link above to control OpenClaw.",
     },
+  },
+  authChoice: {
+    secretStorage: {
+      message: "Where is this API key stored?",
+      envOption: {
+        label: "Environment variable",
+        hint: "Reference a variable from your runtime environment",
+      },
+      providerOption: {
+        label: "Configured secret provider",
+        hint: "Use a configured file or exec secret provider",
+      },
+    },
+    envVar: {
+      message: "Environment variable name",
+      placeholder: "OPENAI_API_KEY",
+      invalidFormat:
+        'Use an env var name like "OPENAI_API_KEY" (uppercase letters, numbers, underscores).',
+      missingOrEmpty: 'Environment variable "{name}" is missing or empty in this session.',
+      noValidName: 'No valid environment variable name provided for provider "{provider}".',
+      validated:
+        "Validated environment variable {name}. OpenClaw will store a reference, not the key value.",
+      validatedTitle: "Reference validated",
+    },
+    secretProvider: {
+      selectMessage: "Select secret provider",
+      noProvidersConfigured:
+        "No file/exec secret providers are configured yet. Add one under secrets.providers, or select Environment variable.",
+      noProvidersTitle: "No providers configured",
+      noProvidersHint: "Add a provider or select Environment variable.",
+      invalidProvider: 'Provider "{name}" is not a file/exec provider.',
+      invalidProviderTitle: "Invalid provider",
+      execHint: "Exec provider",
+      fileHint: "File provider",
+    },
+    secretId: {
+      fileMessage: "Secret id (JSON pointer for json mode, or 'value' for singleValue mode)",
+      execMessage: "Secret id for the exec provider",
+      filePlaceholder: "/providers/openai/apiKey",
+      execPlaceholder: "openai/api-key",
+      emptyError: "Secret id cannot be empty.",
+      invalidJsonPointer: 'Use an absolute JSON pointer like "/providers/openai/apiKey".',
+      invalidSingleValue: 'singleValue mode expects id "value".',
+      validated:
+        "Validated {source} reference {provider}:{id}. OpenClaw will store a reference, not the key value.",
+      validatedTitle: "Reference validated",
+      validationFailed: "Could not validate provider reference {provider}:{id}.",
+      validationFailedTitle: "Reference check failed",
+      checkConfig: "Check your provider configuration and try again.",
+    },
+    apiKeyPrompt: {
+      message: "How do you want to provide this API key?",
+      plaintextLabel: "Paste API key now",
+      plaintextHint: "Stores the key directly in OpenClaw config",
+      refLabel: "Use secret reference",
+      refHint: "Stores a reference to env or configured external secret providers",
+      useExisting: "Use existing {envLabel} ({source}, {preview})?",
+      modelConfigured: 'Default model set to {model} for agent "{agentId}".',
+      modelConfiguredTitle: "Model configured",
+    },
+    errors: {
+      noDefaultEnvVar:
+        'No default environment variable mapping found for provider "{provider}". Set a provider-specific env var, or re-run onboarding in an interactive terminal to configure a ref.',
+      envVarRequired:
+        'Environment variable "{envVar}" is required for --secret-input-mode ref in non-interactive onboarding.',
+    },
+  },
+  modelPicker: {
+    defaultModel: "Default model",
+    defaultModelKeep: "Default model (blank to keep)",
+    providerPlaceholder: "provider/model",
+    required: "Required",
+    filterByProvider: "Filter models by provider",
+    allProviders: "All providers",
+    keepCurrent: "Keep current ({model})",
+    keepCurrentDefault: "Keep current (default: {model})",
+    resolvesTo: "resolves to {model}",
+    enterModelManually: "Enter model manually",
+    vllmCustom: "vLLM (custom)",
+    vllmHint: "Enter vLLM URL + API key + model",
+    currentNotInCatalog: "current (not in catalog)",
+    modelCount: "{count} model",
+    modelCountPlural: "{count} models",
+    authMissing: "auth missing",
+    ctxWindow: "ctx {size}",
+    reasoning: "reasoning",
+    alias: "alias: {aliases}",
+    vllmNotAvailable: "vLLM setup requires an agent directory context.",
+    vllmNotAvailableTitle: "vLLM not available",
+    modelAllowlist: "Allowlist models (comma-separated provider/model; blank to keep current)",
+    modelAllowlistMultiselect: "Models in /model picker (multi-select)",
+    allowedNotInCatalog: "allowed (not in catalog)",
+    configuredNotInCatalog: "configured (not in catalog)",
+    clearAllowlistConfirm: "Clear the model allowlist? (shows all models)",
+  },
+  gatewayConfig: {
+    port: "Gateway port",
+    invalidPort: "Invalid port",
+    bind: "Gateway bind",
+    bindLoopback: "Loopback (127.0.0.1)",
+    bindLan: "LAN (0.0.0.0)",
+    bindTailnet: "Tailnet (Tailscale IP)",
+    bindAuto: "Auto (Loopback → LAN)",
+    bindCustom: "Custom IP",
+    customIp: "Custom IP address",
+    customIpPlaceholder: "192.168.1.100",
+    auth: "Gateway auth",
+    authToken: "Token",
+    authTokenHint: "Recommended default (local + remote)",
+    authPassword: "Password",
+    tailscaleExposure: "Tailscale exposure",
+    tailscaleWarning: "Tailscale Warning",
+    tailscaleNote: "Tailscale",
+    resetTailscaleOnExit: "Reset Tailscale serve/funnel on exit?",
+    tailscaleRequiresLoopback: "Tailscale requires bind=loopback. Adjusting bind to loopback.",
+    tailscaleFunnelRequiresPassword: "Tailscale funnel requires password auth.",
+    note: "Note",
+    gatewayToken: "Gateway token (blank to generate)",
+    gatewayTokenPlaceholder: "Needed for multi-machine or non-loopback access",
+    gatewayPassword: "Gateway password",
   },
 };

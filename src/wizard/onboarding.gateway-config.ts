@@ -13,6 +13,7 @@ import {
 import { findTailscaleBinary } from "../infra/tailscale.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { validateIPv4AddressInput } from "../shared/net/ipv4.js";
+import { t, type I18nContext } from "./i18n/index.js";
 import type {
   GatewayWizardSettings,
   QuickstartGatewayDefaults,
@@ -42,6 +43,7 @@ type ConfigureGatewayOptions = {
   quickstartGateway: QuickstartGatewayDefaults;
   prompter: WizardPrompter;
   runtime: RuntimeEnv;
+  i18n?: I18nContext;
 };
 
 type ConfigureGatewayResult = {
@@ -49,10 +51,25 @@ type ConfigureGatewayResult = {
   settings: GatewayWizardSettings;
 };
 
+function buildDefaultControlUiAllowedOrigins(params: {
+  port: number;
+  bind: GatewayWizardSettings["bind"];
+  customBindHost?: string;
+}): string[] {
+  const origins = new Set<string>([
+    `http://localhost:${params.port}`,
+    `http://127.0.0.1:${params.port}`,
+  ]);
+  if (params.bind === "custom" && params.customBindHost) {
+    origins.add(`http://${params.customBindHost}:${params.port}`);
+  }
+  return [...origins];
+}
+
 export async function configureGatewayForOnboarding(
   opts: ConfigureGatewayOptions,
 ): Promise<ConfigureGatewayResult> {
-  const { flow, localPort, quickstartGateway, prompter } = opts;
+  const { flow, localPort, quickstartGateway, prompter, i18n } = opts;
   let { nextConfig } = opts;
 
   const port =
@@ -61,9 +78,10 @@ export async function configureGatewayForOnboarding(
       : Number.parseInt(
           String(
             await prompter.text({
-              message: "Gateway port",
+              message: t(i18n, "gatewayConfig.port"),
               initialValue: String(localPort),
-              validate: (value) => (Number.isFinite(Number(value)) ? undefined : "Invalid port"),
+              validate: (value) =>
+                Number.isFinite(Number(value)) ? undefined : t(i18n, "gatewayConfig.invalidPort"),
             }),
           ),
           10,
@@ -73,13 +91,13 @@ export async function configureGatewayForOnboarding(
     flow === "quickstart"
       ? quickstartGateway.bind
       : await prompter.select<GatewayWizardSettings["bind"]>({
-          message: "Gateway bind",
+          message: t(i18n, "gatewayConfig.bind"),
           options: [
-            { value: "loopback", label: "Loopback (127.0.0.1)" },
-            { value: "lan", label: "LAN (0.0.0.0)" },
-            { value: "tailnet", label: "Tailnet (Tailscale IP)" },
-            { value: "auto", label: "Auto (Loopback → LAN)" },
-            { value: "custom", label: "Custom IP" },
+            { value: "loopback", label: t(i18n, "gatewayConfig.bindLoopback") },
+            { value: "lan", label: t(i18n, "gatewayConfig.bindLan") },
+            { value: "tailnet", label: t(i18n, "gatewayConfig.bindTailnet") },
+            { value: "auto", label: t(i18n, "gatewayConfig.bindAuto") },
+            { value: "custom", label: t(i18n, "gatewayConfig.bindCustom") },
           ],
         });
 
@@ -88,8 +106,8 @@ export async function configureGatewayForOnboarding(
     const needsPrompt = flow !== "quickstart" || !customBindHost;
     if (needsPrompt) {
       const input = await prompter.text({
-        message: "Custom IP address",
-        placeholder: "192.168.1.100",
+        message: t(i18n, "gatewayConfig.customIp"),
+        placeholder: t(i18n, "gatewayConfig.customIpPlaceholder"),
         initialValue: customBindHost ?? "",
         validate: validateIPv4AddressInput,
       });
@@ -101,14 +119,14 @@ export async function configureGatewayForOnboarding(
     flow === "quickstart"
       ? quickstartGateway.authMode
       : ((await prompter.select({
-          message: "Gateway auth",
+          message: t(i18n, "gatewayConfig.auth"),
           options: [
             {
               value: "token",
-              label: "Token",
-              hint: "Recommended default (local + remote)",
+              label: t(i18n, "gatewayConfig.authToken"),
+              hint: t(i18n, "gatewayConfig.authTokenHint"),
             },
-            { value: "password", label: "Password" },
+            { value: "password", label: t(i18n, "gatewayConfig.authPassword") },
           ],
           initialValue: "token",
         })) as GatewayAuthChoice);
@@ -117,7 +135,7 @@ export async function configureGatewayForOnboarding(
     flow === "quickstart"
       ? quickstartGateway.tailscaleMode
       : await prompter.select<GatewayWizardSettings["tailscaleMode"]>({
-          message: "Tailscale exposure",
+          message: t(i18n, "gatewayConfig.tailscaleExposure"),
           options: [...TAILSCALE_EXPOSURE_OPTIONS],
         });
 
@@ -125,16 +143,19 @@ export async function configureGatewayForOnboarding(
   if (tailscaleMode !== "off") {
     const tailscaleBin = await findTailscaleBinary();
     if (!tailscaleBin) {
-      await prompter.note(TAILSCALE_MISSING_BIN_NOTE_LINES.join("\n"), "Tailscale Warning");
+      await prompter.note(
+        TAILSCALE_MISSING_BIN_NOTE_LINES.join("\n"),
+        t(i18n, "gatewayConfig.tailscaleWarning"),
+      );
     }
   }
 
   let tailscaleResetOnExit = flow === "quickstart" ? quickstartGateway.tailscaleResetOnExit : false;
   if (tailscaleMode !== "off" && flow !== "quickstart") {
-    await prompter.note(TAILSCALE_DOCS_LINES.join("\n"), "Tailscale");
+    await prompter.note(TAILSCALE_DOCS_LINES.join("\n"), t(i18n, "gatewayConfig.tailscaleNote"));
     tailscaleResetOnExit = Boolean(
       await prompter.confirm({
-        message: "Reset Tailscale serve/funnel on exit?",
+        message: t(i18n, "gatewayConfig.resetTailscaleOnExit"),
         initialValue: false,
       }),
     );
@@ -144,13 +165,19 @@ export async function configureGatewayForOnboarding(
   // - Tailscale wants bind=loopback so we never expose a non-loopback server + tailscale serve/funnel at once.
   // - Funnel requires password auth.
   if (tailscaleMode !== "off" && bind !== "loopback") {
-    await prompter.note("Tailscale requires bind=loopback. Adjusting bind to loopback.", "Note");
+    await prompter.note(
+      t(i18n, "gatewayConfig.tailscaleRequiresLoopback"),
+      t(i18n, "gatewayConfig.note"),
+    );
     bind = "loopback";
     customBindHost = undefined;
   }
 
   if (tailscaleMode === "funnel" && authMode !== "password") {
-    await prompter.note("Tailscale funnel requires password auth.", "Note");
+    await prompter.note(
+      t(i18n, "gatewayConfig.tailscaleFunnelRequiresPassword"),
+      t(i18n, "gatewayConfig.note"),
+    );
     authMode = "password";
   }
 
@@ -160,8 +187,8 @@ export async function configureGatewayForOnboarding(
       gatewayToken = quickstartGateway.token ?? randomToken();
     } else {
       const tokenInput = await prompter.text({
-        message: "Gateway token (blank to generate)",
-        placeholder: "Needed for multi-machine or non-loopback access",
+        message: t(i18n, "gatewayConfig.gatewayToken"),
+        placeholder: t(i18n, "gatewayConfig.gatewayTokenPlaceholder"),
         initialValue: quickstartGateway.token ?? "",
       });
       gatewayToken = normalizeGatewayTokenInput(tokenInput) || randomToken();
@@ -173,7 +200,7 @@ export async function configureGatewayForOnboarding(
       flow === "quickstart" && quickstartGateway.password
         ? quickstartGateway.password
         : await prompter.text({
-            message: "Gateway password",
+            message: t(i18n, "gatewayConfig.gatewayPassword"),
             validate: validateGatewayPasswordInput,
           });
     nextConfig = {
@@ -215,6 +242,28 @@ export async function configureGatewayForOnboarding(
       },
     },
   };
+
+  const controlUiEnabled = nextConfig.gateway?.controlUi?.enabled ?? true;
+  const hasExplicitControlUiAllowedOrigins =
+    (nextConfig.gateway?.controlUi?.allowedOrigins ?? []).some(
+      (origin) => origin.trim().length > 0,
+    ) || nextConfig.gateway?.controlUi?.dangerouslyAllowHostHeaderOriginFallback === true;
+  if (controlUiEnabled && bind !== "loopback" && !hasExplicitControlUiAllowedOrigins) {
+    nextConfig = {
+      ...nextConfig,
+      gateway: {
+        ...nextConfig.gateway,
+        controlUi: {
+          ...nextConfig.gateway?.controlUi,
+          allowedOrigins: buildDefaultControlUiAllowedOrigins({
+            port,
+            bind,
+            customBindHost,
+          }),
+        },
+      },
+    };
+  }
 
   // If this is a new gateway setup (no existing gateway settings), start with a
   // denylist for high-risk node commands. Users can arm these temporarily via

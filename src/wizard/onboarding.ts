@@ -358,6 +358,7 @@ export async function runOnboardingWizard(
       prompter,
       runtime,
       config: nextConfig,
+      secretInputMode: opts.secretInputMode,
     });
     nextConfig = customResult.config;
   } else {
@@ -367,6 +368,7 @@ export async function runOnboardingWizard(
       prompter,
       runtime,
       setDefaultModel: true,
+      i18n,
       opts: {
         tokenProvider: opts.tokenProvider,
         token: opts.authChoice === "apiKey" && opts.token ? opts.token : undefined,
@@ -383,6 +385,7 @@ export async function runOnboardingWizard(
       ignoreAllowlist: true,
       includeVllm: true,
       preferredProvider: resolvePreferredProviderForAuthChoice(authChoice),
+      i18n,
     });
     if (modelSelection.config) {
       nextConfig = modelSelection.config;
@@ -403,6 +406,7 @@ export async function runOnboardingWizard(
     quickstartGateway,
     prompter,
     runtime,
+    i18n,
   });
   nextConfig = gateway.nextConfig;
   const settings = gateway.settings;
