@@ -89,6 +89,8 @@ export interface TaskRes {
     fail_reason?: string;
     data?: {
       image_urls?: string[];
+      video_urls?: string[];
+      audio_urls?: string[];
       progress?: number;
       error?: string;
     };

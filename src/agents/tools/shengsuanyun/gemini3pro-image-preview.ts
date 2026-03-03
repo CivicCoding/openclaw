@@ -1,10 +1,11 @@
 import { Type } from "@sinclair/typebox";
 import type { OpenClawConfig } from "../../../config/config.js";
-import type { AnyAgentTool } from "../common.js";
 import { loadConfig } from "../../../config/config.js";
 import { resolveApiKeyForProvider } from "../../model-auth.ts";
 import { SHENGSUANYUN_BASE_URL } from "../../shengsuanyun-models.ts";
+import type { AnyAgentTool } from "../common.js";
 import { readStringArrayParam, readStringParam } from "../common.js";
+import { saveMediaToWorkspace } from "./save-media.ts";
 import { APP_HEADERS, TaskResponse } from "./zimage-turbo.ts";
 
 const ImageGenSchema = Type.Object({
@@ -104,7 +105,10 @@ async function generateImage(params: {
   }
 }
 
-export function createGemini3ProImageTool(opts?: { config?: OpenClawConfig }): AnyAgentTool {
+export function createGemini3ProImageTool(opts?: {
+  config?: OpenClawConfig;
+  workspaceDir?: string;
+}): AnyAgentTool {
   return {
     label: "Gemini 3 Pro Image Generation",
     name: "gemini3pro_image_gen",
@@ -133,13 +137,29 @@ export function createGemini3ProImageTool(opts?: { config?: OpenClawConfig }): A
 
       if (result.success && result.imageUrls) {
         const lines: string[] = [];
-        for (const url of result.imageUrls) {
-          lines.push(`MEDIA:${url}`);
+        const localPaths: string[] = [];
+
+        if (opts?.workspaceDir) {
+          for (const url of result.imageUrls) {
+            try {
+              const localPath = await saveMediaToWorkspace(url, opts.workspaceDir, "gemini3pro");
+              localPaths.push(localPath);
+              lines.push(`MEDIA:${localPath}`);
+            } catch (err) {
+              console.log("saveMediaToWorkspace() function error:", err);
+              lines.push(`MEDIA:${url}`);
+            }
+          }
+        } else {
+          for (const url of result.imageUrls) {
+            lines.push(`MEDIA:${url}`);
+          }
         }
+
         return {
           content: [{ type: "text", text: lines.join("\n") }],
           details: {
-            imageUrl: result.imageUrls,
+            imageUrl: opts?.workspaceDir && localPaths.length > 0 ? localPaths : result.imageUrls,
             provider: "shengsuanyun",
           },
         };
