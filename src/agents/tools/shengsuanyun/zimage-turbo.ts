@@ -1,10 +1,11 @@
 import { Type } from "@sinclair/typebox";
 import type { OpenClawConfig } from "../../../config/config.ts";
-import type { AnyAgentTool } from "../common.ts";
 import { loadConfig } from "../../../config/config.ts";
 import { resolveApiKeyForProvider } from "../../model-auth.ts";
 import { SHENGSUANYUN_BASE_URL } from "../../shengsuanyun-models.ts";
+import type { AnyAgentTool } from "../common.ts";
 import { readStringParam } from "../common.ts";
+import { saveMediaToWorkspace } from "./save-media.ts";
 
 export const APP_HEADERS: Record<string, string> = {
   "HTTP-Referer": "https://openclaw.ai",
@@ -110,7 +111,10 @@ async function generateImage(params: {
   }
 }
 
-export function createZImageTurboTool(opts?: { config?: OpenClawConfig }): AnyAgentTool {
+export function createZImageTurboTool(opts?: {
+  config?: OpenClawConfig;
+  workspaceDir?: string;
+}): AnyAgentTool {
   return {
     label: "Z-Image Turbo Generation",
     name: "zimage_turbo_gen",
@@ -129,13 +133,29 @@ export function createZImageTurboTool(opts?: { config?: OpenClawConfig }): AnyAg
       const result = await generateImage({ prompt, size, apiKey: resolved.apiKey });
       if (result.success && result.imageUrls) {
         const lines: string[] = [];
-        for (const url of result.imageUrls) {
-          lines.push(`MEDIA:${url}`);
+        const localPaths: string[] = [];
+
+        if (opts?.workspaceDir) {
+          for (const url of result.imageUrls) {
+            try {
+              const localPath = await saveMediaToWorkspace(url, opts.workspaceDir, "zimage");
+              localPaths.push(localPath);
+              lines.push(`MEDIA:${localPath}`);
+            } catch (err) {
+              console.log("saveMediaToWorkspace() function error:", err);
+              lines.push(`MEDIA:${url}`);
+            }
+          }
+        } else {
+          for (const url of result.imageUrls) {
+            lines.push(`MEDIA:${url}`);
+          }
         }
+
         return {
           content: [{ type: "text", text: lines.join("\n") }],
           details: {
-            imageUrl: result.imageUrls,
+            imageUrl: opts?.workspaceDir && localPaths.length > 0 ? localPaths : result.imageUrls,
             provider: "shengsuanyun",
           },
         };

@@ -86,7 +86,7 @@ export function createOpenClawTools(options?: {
       })
     : null;
   const ShengSuanYunTools = options?.agentDir?.trim()
-    ? createGenerateTools({ config: options?.config })
+    ? createGenerateTools({ config: options?.config, workspaceDir })
     : null;
   const webSearchTool = createWebSearchTool({
     config: options?.config,

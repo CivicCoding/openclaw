@@ -10,6 +10,7 @@ import {
 import type { AnyAgentTool } from "../common.ts";
 import { readStringParam, readStringArrayParam, readNumberParam } from "../common.ts";
 import { createGemini3ProImageTool } from "./gemini3pro-image-preview.ts";
+import { saveMediaToWorkspace } from "./save-media.ts";
 import { createZImageTurboTool } from "./zimage-turbo.ts";
 
 export const APP_HEADERS: Record<string, string> = {
@@ -69,7 +70,13 @@ async function generate(
         }
         const currentProgress = img_urls.data?.data?.progress || 0;
         if (currentProgress >= 100 || img_urls.data?.status === "SUCCEEDED") {
-          return { success: true, Urls: img_urls.data?.data?.image_urls };
+          return {
+            success: true,
+            Urls:
+              img_urls.data?.data?.image_urls ||
+              img_urls.data?.data?.video_urls ||
+              img_urls.data?.data?.audio_urls,
+          };
         }
         let waitTime = 10000;
 
@@ -102,7 +109,10 @@ function sanitizeToolName(name: string): string {
   return name.replace(/[^a-zA-Z0-9_-]/g, "_").replace(/_+/g, "_");
 }
 
-async function loadShengSuanYunTools(opts?: { config?: OpenClawConfig }): Promise<AnyAgentTool[]> {
+async function loadShengSuanYunTools(opts?: {
+  config?: OpenClawConfig;
+  workspaceDir?: string;
+}): Promise<AnyAgentTool[]> {
   const models = await getShengSuanYunModalityModels();
   const tools: AnyAgentTool[] = [];
   const seenNames = new Set<string>();
@@ -178,13 +188,33 @@ async function loadShengSuanYunTools(opts?: { config?: OpenClawConfig }): Promis
         const result = await generate({ ...apiParams, apiKey: resolved.apiKey });
         if (result.success && result.Urls) {
           const lines: string[] = [];
-          for (const url of result.Urls) {
-            lines.push(`MEDIA:${url}`);
+          const localPaths: string[] = [];
+
+          if (opts?.workspaceDir) {
+            for (const url of result.Urls) {
+              try {
+                const localPath = await saveMediaToWorkspace(
+                  url,
+                  opts.workspaceDir,
+                  model.model_name.replace(/[^a-zA-Z0-9]/g, "_"),
+                );
+                localPaths.push(localPath);
+                lines.push(`MEDIA:${localPath}`);
+              } catch (err) {
+                console.log("saveMediaToWorkspace() function error:", err);
+                lines.push(`MEDIA:${url}`);
+              }
+            }
+          } else {
+            for (const url of result.Urls) {
+              lines.push(`MEDIA:${url}`);
+            }
           }
+
           return {
             content: [{ type: "text", text: lines.join("\n") }],
             details: {
-              Url: result.Urls,
+              Url: opts?.workspaceDir && localPaths.length > 0 ? localPaths : result.Urls,
               provider: "shengsuanyun",
             },
           };
@@ -300,14 +330,20 @@ let cachedTools: AnyAgentTool[] | null = null;
 let loadPromise: Promise<AnyAgentTool[]> | null = null;
 let fallbackToolsCache: AnyAgentTool[] | null = null;
 
-function getFallbackTools(opts?: { config?: OpenClawConfig }): AnyAgentTool[] {
+function getFallbackTools(opts?: {
+  config?: OpenClawConfig;
+  workspaceDir?: string;
+}): AnyAgentTool[] {
   if (fallbackToolsCache === null) {
     fallbackToolsCache = [createZImageTurboTool(opts), createGemini3ProImageTool(opts)];
   }
   return fallbackToolsCache;
 }
 
-export async function preloadShengSuanYunTools(opts?: { config?: OpenClawConfig }): Promise<void> {
+export async function preloadShengSuanYunTools(opts?: {
+  config?: OpenClawConfig;
+  workspaceDir?: string;
+}): Promise<void> {
   if (cachedTools !== null) {
     return;
   }
@@ -333,7 +369,10 @@ export async function preloadShengSuanYunTools(opts?: { config?: OpenClawConfig 
   await loadPromise;
 }
 
-export function createGenerateTools(opts?: { config?: OpenClawConfig }): AnyAgentTool[] {
+export function createGenerateTools(opts?: {
+  config?: OpenClawConfig;
+  workspaceDir?: string;
+}): AnyAgentTool[] {
   if (cachedTools !== null) {
     return cachedTools;
   }
