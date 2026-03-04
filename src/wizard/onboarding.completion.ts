@@ -36,9 +36,9 @@ async function resolveProfileHint(shell: ShellCompletionStatus["shell"]): Promis
 
 function formatReloadHint(shell: ShellCompletionStatus["shell"], profileHint: string): string {
   if (shell === "powershell") {
-    return "Restart your shell (or reload your PowerShell profile).";
+    return "重启您的 shell（或重新加载 PowerShell 配置文件）。";
   }
-  return `Restart your shell or run: source ${profileHint}`;
+  return `重启您的 shell 或运行: source ${profileHint}`;
 }
 
 export async function setupOnboardingShellCompletion(params: {
@@ -78,7 +78,7 @@ export async function setupOnboardingShellCompletion(params: {
       params.flow === "quickstart"
         ? true
         : await params.prompter.confirm({
-            message: `Enable ${completionStatus.shell} shell completion for ${cliName}?`,
+            message: `为 ${cliName} 启用 ${completionStatus.shell} shell 补全？`,
             initialValue: true,
           });
 
@@ -90,8 +90,8 @@ export async function setupOnboardingShellCompletion(params: {
     const cacheGenerated = await deps.ensureCompletionCacheExists(cliName);
     if (!cacheGenerated) {
       await params.prompter.note(
-        `Failed to generate completion cache. Run \`${cliName} completion --install\` later.`,
-        "Shell completion",
+        `生成补全缓存失败。稍后运行 \`${cliName} completion --install\`。`,
+        "Shell 补全",
       );
       return;
     }
@@ -101,8 +101,8 @@ export async function setupOnboardingShellCompletion(params: {
 
     const profileHint = await resolveProfileHint(completionStatus.shell);
     await params.prompter.note(
-      `Shell completion installed. ${formatReloadHint(completionStatus.shell, profileHint)}`,
-      "Shell completion",
+      `Shell 补全已安装。${formatReloadHint(completionStatus.shell, profileHint)}`,
+      "Shell 补全",
     );
   }
   // Case 4: Both profile and cache exist (using cached version) - all good, nothing to do

@@ -30,7 +30,6 @@ export async function applyAuthChoiceVolcengine(
     normalize: normalizeApiKeyInput,
     validate: validateApiKeyInput,
     prompter: params.prompter,
-    i18n: params.i18n,
     setCredential: async (apiKey, mode) =>
       setVolcengineApiKey(apiKey, params.agentDir, { secretInputMode: mode }),
   });

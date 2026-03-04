@@ -41,6 +41,6 @@ export async function applyAuthChoiceVllm(
     return { config: nextConfig, agentModelOverride: modelRef };
   }
 
-  await params.prompter.note(`Default model set to ${modelRef}`, "Model configured");
+  await params.prompter.note(`设置默认模型 ${modelRef}`, "模型设置");
   return { config: applyVllmDefaultModel(nextConfig, modelRef) };
 }

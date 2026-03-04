@@ -49,7 +49,7 @@ describe("applyAuthChoice (moonshot)", () => {
       prompter,
       runtime,
       setDefaultModel: params.setDefaultModel,
-      i18n: createI18nContext("en"),
+      i18n: createI18nContext(),
     });
     return { result, text };
   }

@@ -14,7 +14,6 @@ import type { RuntimeEnv } from "../runtime.js";
 import { defaultRuntime } from "../runtime.js";
 import { resolveUserPath, shortenHomePath } from "../utils.js";
 import { createClackPrompter } from "../wizard/clack-prompter.js";
-import { createI18nContext } from "../wizard/i18n/index.js";
 import { WizardCancelledError } from "../wizard/prompts.js";
 import {
   applyAgentBindings,
@@ -268,8 +267,6 @@ export async function agentsAddCommand(
         store: authStore,
         includeSkip: true,
       });
-
-      const i18n = createI18nContext("en");
       const authResult = await applyAuthChoice({
         authChoice,
         config: nextConfig,
@@ -278,7 +275,6 @@ export async function agentsAddCommand(
         agentDir,
         setDefaultModel: false,
         agentId,
-        i18n,
       });
       nextConfig = authResult.config;
       if (authResult.agentModelOverride) {

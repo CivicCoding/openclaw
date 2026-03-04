@@ -19,7 +19,7 @@ function createParams(
     prompter: createWizardPrompter({}, { defaultSelect: "" }),
     runtime: createExitThrowingRuntime(),
     setDefaultModel: true,
-    i18n: createI18nContext("en"),
+    i18n: createI18nContext(),
     ...overrides,
   };
 }

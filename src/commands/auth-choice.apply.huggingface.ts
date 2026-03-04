@@ -27,7 +27,7 @@ export async function applyAuthChoiceHuggingface(
 
   let nextConfig = params.config;
   let agentModelOverride: string | undefined;
-  const noteAgentModel = createAuthChoiceAgentModelNoter(params, params.i18n);
+  const noteAgentModel = createAuthChoiceAgentModelNoter(params);
   const requestedSecretInputMode = normalizeSecretInputModeInput(params.opts?.secretInputMode);
 
   const hfKey = await ensureApiKeyFromOptionEnvOrPrompt({
@@ -49,7 +49,6 @@ export async function applyAuthChoiceHuggingface(
       "Create a token at: https://huggingface.co/settings/tokens (fine-grained, 'Make calls to Inference Providers').",
     ].join("\n"),
     noteTitle: "Hugging Face",
-    i18n: params.i18n,
   });
   nextConfig = applyAuthProfileConfig(nextConfig, {
     profileId: "huggingface:default",

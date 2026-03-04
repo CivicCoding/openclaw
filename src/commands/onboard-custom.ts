@@ -1,3 +1,4 @@
+import { CONTEXT_WINDOW_HARD_MIN_TOKENS } from "../agents/context-window-guard.js";
 import { DEFAULT_PROVIDER } from "../agents/defaults.js";
 import { buildModelAliasIndex, modelKey } from "../agents/model-selection.js";
 import type { OpenClawConfig } from "../config/config.js";
@@ -9,7 +10,6 @@ import {
   normalizeSecretInput,
   normalizeOptionalSecretInput,
 } from "../utils/normalize-secret-input.js";
-import { createI18nContext, type I18nContext } from "../wizard/i18n/index.js";
 import type { WizardPrompter } from "../wizard/prompts.js";
 import { ensureApiKeyFromEnvOrPrompt } from "./auth-choice.apply-helpers.js";
 import { applyPrimaryModel } from "./model-picker.js";
@@ -17,9 +17,14 @@ import { normalizeAlias } from "./models/shared.js";
 import type { SecretInputMode } from "./onboard-types.js";
 
 const DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434/v1";
-const DEFAULT_CONTEXT_WINDOW = 4096;
+const DEFAULT_CONTEXT_WINDOW = CONTEXT_WINDOW_HARD_MIN_TOKENS;
 const DEFAULT_MAX_TOKENS = 4096;
-const VERIFY_TIMEOUT_MS = 10000;
+const VERIFY_TIMEOUT_MS = 30_000;
+
+function normalizeContextWindowForCustomModel(value: unknown): number {
+  const parsed = typeof value === "number" && Number.isFinite(value) ? Math.floor(value) : 0;
+  return parsed >= CONTEXT_WINDOW_HARD_MIN_TOKENS ? parsed : CONTEXT_WINDOW_HARD_MIN_TOKENS;
+}
 
 /**
  * Detects if a URL is from Azure AI Foundry or Azure OpenAI.
@@ -127,18 +132,18 @@ const COMPATIBILITY_OPTIONS: Array<{
 }> = [
   {
     value: "openai",
-    label: "OpenAI-compatible",
-    hint: "Uses /chat/completions",
+    label: "OpenAI 兼容",
+    hint: "使用 /chat/completions",
   },
   {
     value: "anthropic",
-    label: "Anthropic-compatible",
-    hint: "Uses /messages",
+    label: "Anthropic 兼容",
+    hint: "使用 /messages",
   },
   {
     value: "unknown",
-    label: "Unknown (detect automatically)",
-    hint: "Probes OpenAI then Anthropic endpoints",
+    label: "未知（自动检测）",
+    hint: "先探测 OpenAI 然后 Anthropic 端点",
   },
 ];
 
@@ -194,7 +199,7 @@ function resolveAliasError(params: {
   try {
     normalized = normalizeAlias(trimmed);
   } catch (err) {
-    return err instanceof Error ? err.message : "Alias is invalid.";
+    return err instanceof Error ? err.message : "别名无效。";
   }
   const aliasIndex = buildModelAliasIndex({
     cfg: params.cfg,
@@ -209,7 +214,15 @@ function resolveAliasError(params: {
   if (existingKey === params.modelRef) {
     return undefined;
   }
-  return `Alias ${normalized} already points to ${existingKey}.`;
+  return `别名 ${normalized} 已指向 ${existingKey}。`;
+}
+
+function buildAzureOpenAiHeaders(apiKey: string) {
+  const headers: Record<string, string> = {};
+  if (apiKey) {
+    headers["api-key"] = apiKey;
+  }
+  return headers;
 }
 
 function buildOpenAiHeaders(apiKey: string) {
@@ -312,15 +325,32 @@ async function requestOpenAiVerification(params: {
     modelId: params.modelId,
     endpointPath: "chat/completions",
   });
-  return await requestVerification({
-    endpoint,
-    headers: buildOpenAiHeaders(params.apiKey),
-    body: {
-      model: params.modelId,
-      messages: [{ role: "user", content: "Hi" }],
-      max_tokens: 1024,
-    },
-  });
+  const isBaseUrlAzureUrl = isAzureUrl(params.baseUrl);
+  const headers = isBaseUrlAzureUrl
+    ? buildAzureOpenAiHeaders(params.apiKey)
+    : buildOpenAiHeaders(params.apiKey);
+  if (isBaseUrlAzureUrl) {
+    return await requestVerification({
+      endpoint,
+      headers,
+      body: {
+        messages: [{ role: "user", content: "Hi" }],
+        max_completion_tokens: 5,
+        stream: false,
+      },
+    });
+  } else {
+    return await requestVerification({
+      endpoint,
+      headers,
+      body: {
+        model: params.modelId,
+        messages: [{ role: "user", content: "Hi" }],
+        max_tokens: 1,
+        stream: false,
+      },
+    });
+  }
 }
 
 async function requestAnthropicVerification(params: {
@@ -344,8 +374,9 @@ async function requestAnthropicVerification(params: {
     headers: buildAnthropicHeaders(params.apiKey),
     body: {
       model: params.modelId,
-      max_tokens: 1024,
+      max_tokens: 1,
       messages: [{ role: "user", content: "Hi" }],
+      stream: false,
     },
   });
 }
@@ -355,10 +386,9 @@ async function promptBaseUrlAndKey(params: {
   config: OpenClawConfig;
   secretInputMode?: SecretInputMode;
   initialBaseUrl?: string;
-  i18n: I18nContext;
 }): Promise<{ baseUrl: string; apiKey?: SecretInput; resolvedApiKey: string }> {
   const baseUrlInput = await params.prompter.text({
-    message: "API Base URL",
+    message: "API 基础 URL",
     initialValue: params.initialBaseUrl ?? DEFAULT_OLLAMA_BASE_URL,
     placeholder: "https://api.example.com/v1",
     validate: (val) => {
@@ -366,7 +396,7 @@ async function promptBaseUrlAndKey(params: {
         new URL(val);
         return undefined;
       } catch {
-        return "Please enter a valid URL (e.g. http://...)";
+        return "请输入有效的 URL（例如 http://...）";
       }
     },
   });
@@ -377,11 +407,10 @@ async function promptBaseUrlAndKey(params: {
     config: params.config,
     provider: providerHint,
     envLabel: "CUSTOM_API_KEY",
-    promptMessage: "API Key (leave blank if not required)",
+    promptMessage: "API 密钥（如不需要请留空）",
     normalize: normalizeSecretInput,
     validate: () => undefined,
     prompter: params.prompter,
-    i18n: params.i18n,
     secretInputMode: params.secretInputMode,
     setCredential: async (apiKey) => {
       apiKeyInput = apiKey;
@@ -398,11 +427,11 @@ type CustomApiRetryChoice = "baseUrl" | "model" | "both";
 
 async function promptCustomApiRetryChoice(prompter: WizardPrompter): Promise<CustomApiRetryChoice> {
   return await prompter.select({
-    message: "What would you like to change?",
+    message: "您想更改什么？",
     options: [
-      { value: "baseUrl", label: "Change base URL" },
-      { value: "model", label: "Change model" },
-      { value: "both", label: "Change base URL and model" },
+      { value: "baseUrl", label: "更改基础 URL" },
+      { value: "model", label: "更改模型" },
+      { value: "both", label: "更改基础 URL 和模型" },
     ],
   });
 }
@@ -410,9 +439,9 @@ async function promptCustomApiRetryChoice(prompter: WizardPrompter): Promise<Cus
 async function promptCustomApiModelId(prompter: WizardPrompter): Promise<string> {
   return (
     await prompter.text({
-      message: "Model ID",
-      placeholder: "e.g. llama3, claude-3-7-sonnet",
-      validate: (val) => (val.trim() ? undefined : "Model ID is required"),
+      message: "模型 ID",
+      placeholder: "例如 llama3、claude-3-7-sonnet",
+      validate: (val) => (val.trim() ? undefined : "模型 ID 是必填项"),
     })
   ).trim();
 }
@@ -423,7 +452,6 @@ async function applyCustomApiRetryChoice(params: {
   secretInputMode?: SecretInputMode;
   retryChoice: CustomApiRetryChoice;
   current: { baseUrl: string; apiKey?: SecretInput; resolvedApiKey: string; modelId: string };
-  i18n: I18nContext;
 }): Promise<{ baseUrl: string; apiKey?: SecretInput; resolvedApiKey: string; modelId: string }> {
   let { baseUrl, apiKey, resolvedApiKey, modelId } = params.current;
   if (params.retryChoice === "baseUrl" || params.retryChoice === "both") {
@@ -432,7 +460,6 @@ async function applyCustomApiRetryChoice(params: {
       config: params.config,
       secretInputMode: params.secretInputMode,
       initialBaseUrl: baseUrl,
-      i18n: params.i18n,
     });
     baseUrl = retryInput.baseUrl;
     apiKey = retryInput.apiKey;
@@ -458,7 +485,7 @@ function parseCustomApiCompatibility(raw?: string): CustomApiCompatibility {
   if (compatibilityRaw !== "openai" && compatibilityRaw !== "anthropic") {
     throw new CustomApiError(
       "invalid_compatibility",
-      'Invalid --custom-compatibility (use "openai" or "anthropic").',
+      '无效的 --custom-compatibility（使用 "openai" 或 "anthropic"）。',
     );
   }
   return compatibilityRaw;
@@ -471,10 +498,7 @@ export function resolveCustomProviderId(
   const baseUrl = params.baseUrl.trim();
   const explicitProviderId = params.providerId?.trim();
   if (explicitProviderId && !normalizeEndpointId(explicitProviderId)) {
-    throw new CustomApiError(
-      "invalid_provider_id",
-      "Custom provider ID must include letters, numbers, or hyphens.",
-    );
+    throw new CustomApiError("invalid_provider_id", "自定义提供商 ID 必须包含字母、数字或连字符。");
   }
   const requestedProviderId = explicitProviderId || buildEndpointIdFromUrl(baseUrl);
   const providerIdResult = resolveUniqueEndpointId({
@@ -502,8 +526,8 @@ export function parseNonInteractiveCustomApiFlags(
     throw new CustomApiError(
       "missing_required",
       [
-        'Auth choice "custom-api-key" requires a base URL and model ID.',
-        "Use --custom-base-url and --custom-model-id.",
+        '认证选择 "custom-api-key" 需要基础 URL 和模型 ID。',
+        "使用 --custom-base-url 和 --custom-model-id。",
       ].join("\n"),
     );
   }
@@ -511,10 +535,7 @@ export function parseNonInteractiveCustomApiFlags(
   const apiKey = params.apiKey?.trim();
   const providerId = params.providerId?.trim();
   if (providerId && !normalizeEndpointId(providerId)) {
-    throw new CustomApiError(
-      "invalid_provider_id",
-      "Custom provider ID must include letters, numbers, or hyphens.",
-    );
+    throw new CustomApiError("invalid_provider_id", "自定义提供商 ID 必须包含字母、数字或连字符。");
   }
   return {
     baseUrl,
@@ -530,19 +551,19 @@ export function applyCustomApiConfig(params: ApplyCustomApiConfigParams): Custom
   try {
     new URL(baseUrl);
   } catch {
-    throw new CustomApiError("invalid_base_url", "Custom provider base URL must be a valid URL.");
+    throw new CustomApiError("invalid_base_url", "自定义提供商基础 URL 必须是有效的 URL。");
   }
 
   if (params.compatibility !== "openai" && params.compatibility !== "anthropic") {
     throw new CustomApiError(
       "invalid_compatibility",
-      'Custom provider compatibility must be "openai" or "anthropic".',
+      '自定义提供商兼容性必须是 "openai" 或 "anthropic"。',
     );
   }
 
   const modelId = params.modelId.trim();
   if (!modelId) {
-    throw new CustomApiError("invalid_model_id", "Custom provider model ID is required.");
+    throw new CustomApiError("invalid_model_id", "自定义提供商模型 ID 是必填项。");
   }
 
   // Transform Azure URLs to include the deployment path for API calls
@@ -579,7 +600,16 @@ export function applyCustomApiConfig(params: ApplyCustomApiConfigParams): Custom
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     reasoning: false,
   };
-  const mergedModels = hasModel ? existingModels : [...existingModels, nextModel];
+  const mergedModels = hasModel
+    ? existingModels.map((model) =>
+        model.id === modelId
+          ? {
+              ...model,
+              contextWindow: normalizeContextWindowForCustomModel(model.contextWindow),
+            }
+          : model,
+      )
+    : [...existingModels, nextModel];
   const { apiKey: existingApiKey, ...existingProviderRest } = existingProvider ?? {};
   const normalizedApiKey =
     normalizeOptionalProviderApiKey(params.apiKey) ??
@@ -638,23 +668,20 @@ export async function promptCustomApiConfig(params: {
   runtime: RuntimeEnv;
   config: OpenClawConfig;
   secretInputMode?: SecretInputMode;
-  i18n?: I18nContext;
 }): Promise<CustomApiResult> {
   const { prompter, runtime, config } = params;
-  const i18n = params.i18n ?? createI18nContext("en");
 
   const baseInput = await promptBaseUrlAndKey({
     prompter,
     config,
     secretInputMode: params.secretInputMode,
-    i18n,
   });
   let baseUrl = baseInput.baseUrl;
   let apiKey = baseInput.apiKey;
   let resolvedApiKey = baseInput.resolvedApiKey;
 
   const compatibilityChoice = await prompter.select({
-    message: "Endpoint compatibility",
+    message: "端点兼容性",
     options: COMPATIBILITY_OPTIONS.map((option) => ({
       value: option.value,
       label: option.label,
@@ -670,14 +697,14 @@ export async function promptCustomApiConfig(params: {
   while (true) {
     let verifiedFromProbe = false;
     if (!compatibility) {
-      const probeSpinner = prompter.progress("Detecting endpoint type...");
+      const probeSpinner = prompter.progress("正在检测端点类型…");
       const openaiProbe = await requestOpenAiVerification({
         baseUrl,
         apiKey: resolvedApiKey,
         modelId,
       });
       if (openaiProbe.ok) {
-        probeSpinner.stop("Detected OpenAI-compatible endpoint.");
+        probeSpinner.stop("检测到 OpenAI 兼容端点。");
         compatibility = "openai";
         verifiedFromProbe = true;
       } else {
@@ -687,15 +714,12 @@ export async function promptCustomApiConfig(params: {
           modelId,
         });
         if (anthropicProbe.ok) {
-          probeSpinner.stop("Detected Anthropic-compatible endpoint.");
+          probeSpinner.stop("检测到 Anthropic 兼容端点。");
           compatibility = "anthropic";
           verifiedFromProbe = true;
         } else {
-          probeSpinner.stop("Could not detect endpoint type.");
-          await prompter.note(
-            "This endpoint did not respond to OpenAI or Anthropic style requests.",
-            "Endpoint detection",
-          );
+          probeSpinner.stop("无法检测端点类型。");
+          await prompter.note("此端点未响应 OpenAI 或 Anthropic 样式的请求。", "端点检测");
           const retryChoice = await promptCustomApiRetryChoice(prompter);
           ({ baseUrl, apiKey, resolvedApiKey, modelId } = await applyCustomApiRetryChoice({
             prompter,
@@ -703,7 +727,6 @@ export async function promptCustomApiConfig(params: {
             secretInputMode: params.secretInputMode,
             retryChoice,
             current: { baseUrl, apiKey, resolvedApiKey, modelId },
-            i18n,
           }));
           continue;
         }
@@ -714,19 +737,19 @@ export async function promptCustomApiConfig(params: {
       break;
     }
 
-    const verifySpinner = prompter.progress("Verifying...");
+    const verifySpinner = prompter.progress("正在验证…");
     const result =
       compatibility === "anthropic"
         ? await requestAnthropicVerification({ baseUrl, apiKey: resolvedApiKey, modelId })
         : await requestOpenAiVerification({ baseUrl, apiKey: resolvedApiKey, modelId });
     if (result.ok) {
-      verifySpinner.stop("Verification successful.");
+      verifySpinner.stop("验证成功。");
       break;
     }
     if (result.status !== undefined) {
-      verifySpinner.stop(`Verification failed: status ${result.status}`);
+      verifySpinner.stop(`验证失败：状态 ${result.status}`);
     } else {
-      verifySpinner.stop(`Verification failed: ${formatVerificationError(result.error)}`);
+      verifySpinner.stop(`验证失败：${formatVerificationError(result.error)}`);
     }
     const retryChoice = await promptCustomApiRetryChoice(prompter);
     ({ baseUrl, apiKey, resolvedApiKey, modelId } = await applyCustomApiRetryChoice({
@@ -735,7 +758,6 @@ export async function promptCustomApiConfig(params: {
       secretInputMode: params.secretInputMode,
       retryChoice,
       current: { baseUrl, apiKey, resolvedApiKey, modelId },
-      i18n,
     }));
     if (compatibilityChoice === "unknown") {
       compatibility = null;
@@ -745,20 +767,20 @@ export async function promptCustomApiConfig(params: {
   const providers = config.models?.providers ?? {};
   const suggestedId = buildEndpointIdFromUrl(baseUrl);
   const providerIdInput = await prompter.text({
-    message: "Endpoint ID",
+    message: "端点 ID",
     initialValue: suggestedId,
     placeholder: "custom",
     validate: (value) => {
       const normalized = normalizeEndpointId(value);
       if (!normalized) {
-        return "Endpoint ID is required.";
+        return "端点 ID 是必填项。";
       }
       return undefined;
     },
   });
   const aliasInput = await prompter.text({
-    message: "Model alias (optional)",
-    placeholder: "e.g. local, ollama",
+    message: "模型别名（可选）",
+    placeholder: "例如 local、ollama",
     initialValue: "",
     validate: (value) => {
       const requestedId = normalizeEndpointId(providerIdInput) || "custom";
@@ -784,11 +806,11 @@ export async function promptCustomApiConfig(params: {
 
   if (result.providerIdRenamedFrom && result.providerId) {
     await prompter.note(
-      `Endpoint ID "${result.providerIdRenamedFrom}" already exists for a different base URL. Using "${result.providerId}".`,
-      "Endpoint ID",
+      `端点 ID "${result.providerIdRenamedFrom}" 已用于不同的基础 URL。使用 "${result.providerId}"。`,
+      "端点 ID",
     );
   }
 
-  runtime.log(`Configured custom provider: ${result.providerId}/${result.modelId}`);
+  runtime.log(`已配置自定义提供商：${result.providerId}/${result.modelId}`);
   return result;
 }

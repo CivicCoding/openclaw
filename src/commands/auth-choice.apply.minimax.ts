@@ -1,7 +1,6 @@
 import { normalizeApiKeyInput, validateApiKeyInput } from "./auth-choice.api-key.js";
 import {
-  createAuthChoiceDefaultModelApplier,
-  createAuthChoiceModelStateBridge,
+  createAuthChoiceDefaultModelApplierForMutableState,
   ensureApiKeyFromOptionEnvOrPrompt,
   normalizeSecretInputModeInput,
 } from "./auth-choice.apply-helpers.js";
@@ -23,15 +22,12 @@ export async function applyAuthChoiceMiniMax(
 ): Promise<ApplyAuthChoiceResult | null> {
   let nextConfig = params.config;
   let agentModelOverride: string | undefined;
-  const applyProviderDefaultModel = createAuthChoiceDefaultModelApplier(
+  const applyProviderDefaultModel = createAuthChoiceDefaultModelApplierForMutableState(
     params,
-    createAuthChoiceModelStateBridge({
-      getConfig: () => nextConfig,
-      setConfig: (config) => (nextConfig = config),
-      getAgentModelOverride: () => agentModelOverride,
-      setAgentModelOverride: (model) => (agentModelOverride = model),
-    }),
-    params.i18n,
+    () => nextConfig,
+    (config) => (nextConfig = config),
+    () => agentModelOverride,
+    (model) => (agentModelOverride = model),
   );
   const requestedSecretInputMode = normalizeSecretInputModeInput(params.opts?.secretInputMode);
   const ensureMinimaxApiKey = async (opts: {
@@ -52,7 +48,6 @@ export async function applyAuthChoiceMiniMax(
       prompter: params.prompter,
       setCredential: async (apiKey, mode) =>
         setMinimaxApiKey(apiKey, params.agentDir, opts.profileId, { secretInputMode: mode }),
-      i18n: params.i18n,
     });
   };
   const applyMinimaxApiVariant = async (opts: {
@@ -117,7 +112,7 @@ export async function applyAuthChoiceMiniMax(
       promptMessage: "Enter MiniMax API key",
       modelRefPrefix: "minimax",
       modelId:
-        params.authChoice === "minimax-api-lightning" ? "MiniMax-M2.5-Lightning" : "MiniMax-M2.5",
+        params.authChoice === "minimax-api-lightning" ? "MiniMax-M2.5-highspeed" : "MiniMax-M2.5",
       applyDefaultConfig: applyMinimaxApiConfig,
       applyProviderConfig: applyMinimaxApiProviderConfig,
     });
@@ -137,7 +132,7 @@ export async function applyAuthChoiceMiniMax(
 
   if (params.authChoice === "minimax") {
     await applyProviderDefaultModel({
-      defaultModel: "lmstudio/minimax-m2.1-gs32",
+      defaultModel: "lmstudio/minimax-m2.5-gs32",
       applyDefaultConfig: applyMinimaxConfig,
       applyProviderConfig: applyMinimaxProviderConfig,
     });

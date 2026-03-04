@@ -174,7 +174,7 @@ describe("applyAuthChoice", () => {
       prompter,
       runtime,
       setDefaultModel: false,
-      i18n: createI18nContext("en"),
+      i18n: createI18nContext(),
     });
 
     expect(result.config.auth?.profiles?.["openai-codex:user@example.com"]).toMatchObject({
@@ -248,7 +248,7 @@ describe("applyAuthChoice", () => {
         prompter,
         runtime,
         setDefaultModel: true,
-        i18n: createI18nContext("en"),
+        i18n: createI18nContext(),
       });
 
       expect(text).toHaveBeenCalledWith(
@@ -345,7 +345,7 @@ describe("applyAuthChoice", () => {
         prompter,
         runtime,
         setDefaultModel: true,
-        i18n: createI18nContext("en"),
+        i18n: createI18nContext(),
       });
 
       if (scenario.shouldAssertDetectCall) {
@@ -432,7 +432,7 @@ describe("applyAuthChoice", () => {
         prompter,
         runtime,
         setDefaultModel: true,
-        i18n: createI18nContext("en"),
+        i18n: createI18nContext(),
         opts: {
           tokenProvider: scenario.tokenProvider,
           token: scenario.token,
@@ -541,7 +541,7 @@ describe("applyAuthChoice", () => {
         prompter,
         runtime,
         setDefaultModel: true,
-        i18n: createI18nContext("en"),
+        i18n: createI18nContext(),
         opts: {
           tokenProvider,
           token,
@@ -576,7 +576,7 @@ describe("applyAuthChoice", () => {
       prompter,
       runtime,
       setDefaultModel: false,
-      i18n: createI18nContext("en"),
+      i18n: createI18nContext(),
       opts: {
         tokenProvider: "google",
         token: "sk-gemini-test",
@@ -611,7 +611,7 @@ describe("applyAuthChoice", () => {
       prompter,
       runtime,
       setDefaultModel: true,
-      i18n: createI18nContext("en"),
+      i18n: createI18nContext(),
     });
 
     expect(note).toHaveBeenCalledWith(
@@ -708,7 +708,7 @@ describe("applyAuthChoice", () => {
         prompter,
         runtime,
         setDefaultModel: true,
-        i18n: createI18nContext("en"),
+        i18n: createI18nContext(),
         opts: scenario.opts,
       });
 
@@ -792,7 +792,7 @@ describe("applyAuthChoice", () => {
       prompter,
       runtime,
       setDefaultModel: false,
-      i18n: createI18nContext("en"),
+      i18n: createI18nContext(),
       opts: { secretInputMode: "ref" },
     });
 
@@ -856,7 +856,7 @@ describe("applyAuthChoice", () => {
         prompter,
         runtime,
         setDefaultModel: false,
-        i18n: createI18nContext("en"),
+        i18n: createI18nContext(),
         agentId: scenario.agentId,
       });
 
@@ -904,7 +904,7 @@ describe("applyAuthChoice", () => {
         prompter,
         runtime,
         setDefaultModel: true,
-        i18n: createI18nContext("en"),
+        i18n: createI18nContext(),
       });
 
       expect(resolveAgentModelPrimaryValue(result.config.agents?.defaults?.model)).toBe(
@@ -949,7 +949,7 @@ describe("applyAuthChoice", () => {
         prompter,
         runtime,
         setDefaultModel: false,
-        i18n: createI18nContext("en"),
+        i18n: createI18nContext(),
       });
 
       expect(result.config.auth?.profiles?.[scenario.profileId]).toMatchObject({
@@ -1006,7 +1006,7 @@ describe("applyAuthChoice", () => {
       prompter,
       runtime,
       setDefaultModel: true,
-      i18n: createI18nContext("en"),
+      i18n: createI18nContext(),
     });
 
     expect(confirm).toHaveBeenCalledWith(
@@ -1107,7 +1107,7 @@ describe("applyAuthChoice", () => {
         prompter,
         runtime,
         setDefaultModel: true,
-        i18n: createI18nContext("en"),
+        i18n: createI18nContext(),
         opts: scenario.opts,
       });
 
@@ -1190,7 +1190,7 @@ describe("applyAuthChoice", () => {
       prompter,
       runtime,
       setDefaultModel: false,
-      i18n: createI18nContext("en"),
+      i18n: createI18nContext(),
     });
 
     expect(text).toHaveBeenCalledWith(
@@ -1246,7 +1246,7 @@ describe("applyAuthChoice", () => {
         profileId: "minimax-portal:default",
         baseUrl: "https://api.minimax.io/anthropic",
         api: "anthropic-messages",
-        defaultModel: "minimax-portal/MiniMax-M2.1",
+        defaultModel: "minimax-portal/MiniMax-M2.5",
         apiKey: "minimax-oauth",
         selectValue: "oauth",
       },
@@ -1308,7 +1308,7 @@ describe("applyAuthChoice", () => {
         prompter,
         runtime,
         setDefaultModel: true,
-        i18n: createI18nContext("en"),
+        i18n: createI18nContext(),
       });
 
       expect(result.config.auth?.profiles?.[scenario.profileId]).toMatchObject({

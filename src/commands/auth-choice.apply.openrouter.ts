@@ -20,7 +20,7 @@ export async function applyAuthChoiceOpenRouter(
 ): Promise<ApplyAuthChoiceResult> {
   let nextConfig = params.config;
   let agentModelOverride: string | undefined;
-  const noteAgentModel = createAuthChoiceAgentModelNoter(params, params.i18n);
+  const noteAgentModel = createAuthChoiceAgentModelNoter(params);
   const requestedSecretInputMode = normalizeSecretInputModeInput(params.opts?.secretInputMode);
 
   const store = ensureAuthProfileStore(params.agentDir, { allowKeychainPrompt: false });
@@ -62,7 +62,6 @@ export async function applyAuthChoiceOpenRouter(
       normalize: normalizeApiKeyInput,
       validate: validateApiKeyInput,
       prompter: params.prompter,
-      i18n: params.i18n,
       setCredential: async (apiKey, mode) =>
         setOpenrouterApiKey(apiKey, params.agentDir, { secretInputMode: mode }),
     });

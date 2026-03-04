@@ -1,7 +1,6 @@
 import type { OpenClawConfig } from "../../config/config.js";
 import type { DmPolicy } from "../../config/types.js";
 import type { RuntimeEnv } from "../../runtime.js";
-import type { I18nContext } from "../../wizard/i18n/index.js";
 import type { WizardPrompter } from "../../wizard/prompts.js";
 import type { ChannelId } from "./types.js";
 
@@ -21,7 +20,7 @@ export type SetupChannelsOptions = {
   skipConfirm?: boolean;
   quickstartDefaults?: boolean;
   initialSelection?: ChannelId[];
-  i18n?: I18nContext;
+  secretInputMode?: "plaintext" | "ref";
 };
 
 export type PromptAccountIdParams = {

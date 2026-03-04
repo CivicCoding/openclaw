@@ -19,18 +19,18 @@ export async function onboardCommand(opts: OnboardOptions, runtime: RuntimeEnv =
   if (opts.nonInteractive && isDeprecatedAuthChoice(originalAuthChoice)) {
     runtime.error(
       [
-        `Auth choice "${String(originalAuthChoice)}" is deprecated.`,
-        'Use "--auth-choice token" (Anthropic setup-token) or "--auth-choice openai-codex".',
+        `认证选项 "${String(originalAuthChoice)}" 已弃用。`,
+        '请使用 "--auth-choice token"（Anthropic setup-token）或 "--auth-choice openai-codex"。',
       ].join("\n"),
     );
     runtime.exit(1);
     return;
   }
   if (originalAuthChoice === "claude-cli") {
-    runtime.log('Auth choice "claude-cli" is deprecated; using setup-token flow instead.');
+    runtime.log('认证选项 "claude-cli" 已弃用；将使用 setup-token 流程。');
   }
   if (originalAuthChoice === "codex-cli") {
-    runtime.log('Auth choice "codex-cli" is deprecated; using OpenAI Codex OAuth instead.');
+    runtime.log('认证选项 "codex-cli" 已弃用；将使用 OpenAI Codex OAuth。');
   }
   const flow = opts.flow === "manual" ? ("advanced" as const) : opts.flow;
   const normalizedOpts =
@@ -42,13 +42,13 @@ export async function onboardCommand(opts: OnboardOptions, runtime: RuntimeEnv =
     normalizedOpts.secretInputMode !== "plaintext" &&
     normalizedOpts.secretInputMode !== "ref"
   ) {
-    runtime.error('Invalid --secret-input-mode. Use "plaintext" or "ref".');
+    runtime.error('无效的 --secret-input-mode。请使用 "plaintext" 或 "ref"。');
     runtime.exit(1);
     return;
   }
 
   if (normalizedOpts.resetScope && !VALID_RESET_SCOPES.has(normalizedOpts.resetScope)) {
-    runtime.error('Invalid --reset-scope. Use "config", "config+creds+sessions", or "full".');
+    runtime.error('无效的 --reset-scope。请使用 "config"、"config+creds+sessions" 或 "full"。');
     runtime.exit(1);
     return;
   }
@@ -56,9 +56,9 @@ export async function onboardCommand(opts: OnboardOptions, runtime: RuntimeEnv =
   if (normalizedOpts.nonInteractive && normalizedOpts.acceptRisk !== true) {
     runtime.error(
       [
-        "Non-interactive onboarding requires explicit risk acknowledgement.",
-        "Read: https://docs.openclaw.ai/security",
-        `Re-run with: ${formatCliCommand("openclaw onboard --non-interactive --accept-risk ...")}`,
+        "非交互式入门需要明确的风险确认。",
+        "请阅读：https://docs.openclaw.ai/security",
+        `重新运行命令：${formatCliCommand("openclaw onboard --non-interactive --accept-risk ...")}`,
       ].join("\n"),
     );
     runtime.exit(1);
@@ -77,10 +77,10 @@ export async function onboardCommand(opts: OnboardOptions, runtime: RuntimeEnv =
   if (process.platform === "win32") {
     runtime.log(
       [
-        "Windows detected — OpenClaw runs great on WSL2!",
-        "Native Windows might be trickier.",
-        "Quick setup: wsl --install (one command, one reboot)",
-        "Guide: https://docs.openclaw.ai/windows",
+        "检测到 Windows 系统 — OpenClaw 在 WSL2 上运行良好！",
+        "原生 Windows 可能会有些棘手。",
+        "快速设置：wsl --install（一条命令，一次重启）",
+        "指南：https://docs.openclaw.ai/windows",
       ].join("\n"),
     );
   }

@@ -56,7 +56,7 @@ export async function applyAuthChoiceGitHubCopilot(
         },
       },
     };
-    await params.prompter.note(`Default model set to ${model}`, "Model configured");
+    await params.prompter.note(`设置默认模型 ${model}`, "模型设置");
   }
 
   return { config: nextConfig };

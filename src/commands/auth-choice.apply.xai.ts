@@ -23,7 +23,7 @@ export async function applyAuthChoiceXAI(
 
   let nextConfig = params.config;
   let agentModelOverride: string | undefined;
-  const noteAgentModel = createAuthChoiceAgentModelNoter(params, params.i18n);
+  const noteAgentModel = createAuthChoiceAgentModelNoter(params);
   const requestedSecretInputMode = normalizeSecretInputModeInput(params.opts?.secretInputMode);
   await ensureApiKeyFromOptionEnvOrPrompt({
     token: params.opts?.xaiApiKey,
@@ -37,7 +37,6 @@ export async function applyAuthChoiceXAI(
     normalize: normalizeApiKeyInput,
     validate: validateApiKeyInput,
     prompter: params.prompter,
-    i18n: params.i18n,
     setCredential: async (apiKey, mode) =>
       setXaiApiKey(apiKey, params.agentDir, { secretInputMode: mode }),
   });

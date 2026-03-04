@@ -12,41 +12,56 @@ import {
   resolveGatewayPort,
   writeConfigFile,
 } from "../config/config.js";
+import { normalizeSecretInputString } from "../config/types.secrets.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { defaultRuntime } from "../runtime.js";
 import { resolveUserPath } from "../utils.js";
-import { createI18nContext, type I18nContext, type Locale } from "./i18n/index.js";
+import { resolveOnboardingSecretInputString } from "./onboarding.secret-input.js";
 import type { QuickstartGatewayDefaults, WizardFlow } from "./onboarding.types.js";
 import { WizardCancelledError, type WizardPrompter } from "./prompts.js";
-
-async function promptLanguageSelection(params: { prompter: WizardPrompter }): Promise<Locale> {
-  const locale = await params.prompter.select({
-    message: "Select your language / 选择语言",
-    options: [
-      { value: "en" as const, label: "English" },
-      { value: "zh-CN" as const, label: "中文 (简体)" },
-    ],
-    initialValue: "en" as const,
-  });
-  return locale;
-}
 
 async function requireRiskAcknowledgement(params: {
   opts: OnboardOptions;
   prompter: WizardPrompter;
-  i18n: I18nContext;
 }) {
   if (params.opts.acceptRisk === true) {
     return;
   }
 
   await params.prompter.note(
-    params.i18n.t.security.warning.join("\n"),
-    params.i18n.t.security.header,
+    [
+      "安全警告 — 请仔细阅读。",
+      "",
+      "OpenClaw 是一个业余项目，仍处于测试阶段。可能会有问题。",
+      "默认情况下，OpenClaw 是个人代理：一个可信操作者边界。",
+      "如果启用工具，此机器人可以读取文件并运行操作。",
+      "一个糟糕的提示可能会欺骗它做不安全的事情。",
+      "",
+      "默认情况下，OpenClaw 不是一个敌对的多租户边界。",
+      "如果多个用户可以向一个启用工具的代理发送消息，他们将共享该委托工具权限。",
+      "",
+      "如果您不熟悉安全加固和访问控制，请不要运行 OpenClaw。",
+      "在启用工具或将其暴露到互联网之前，请有经验的人帮助。",
+      "",
+      "推荐基准:",
+      "- 配对/允许列表 + 提及门控。",
+      "- 多用户/共享收件箱：分离信任边界（独立的网关/凭据，理想情况下独立的操作系统用户/主机）。",
+      "- 沙箱 + 最小特权工具。",
+      "- 共享收件箱：隔离 DM 会话（`session.dmScope: per-channel-peer`）并保持最小的工具访问权限。",
+      "- 将机密保存在代理可访问的文件系统之外。",
+      "- 对于任何带有工具或不受信任收件箱的机器人，使用最强大的可用模型。",
+      "",
+      "定期运行:",
+      "openclaw security audit --deep",
+      "openclaw security audit --fix",
+      "",
+      "必读: https://docs.openclaw.ai/gateway/security",
+    ].join("\n"),
+    "安全",
   );
 
   const ok = await params.prompter.confirm({
-    message: params.i18n.t.security.confirm,
+    message: "我理解这默认是个人使用的，共享/多用户使用需要加强安全限制。继续？",
     initialValue: false,
   });
   if (!ok) {
@@ -61,38 +76,33 @@ export async function runOnboardingWizard(
 ) {
   const onboardHelpers = await import("../commands/onboard-helpers.js");
   onboardHelpers.printWizardHeader(runtime);
-
-  // Add language selection step
-  const locale = await promptLanguageSelection({ prompter });
-  const i18n = createI18nContext(locale);
-
-  await prompter.intro(i18n.t.wizard.intro);
-  await requireRiskAcknowledgement({ opts, prompter, i18n });
+  await prompter.intro("OpenClaw 入门向导");
+  await requireRiskAcknowledgement({ opts, prompter });
 
   const snapshot = await readConfigFileSnapshot();
   let baseConfig: OpenClawConfig = snapshot.valid ? snapshot.config : {};
 
   if (snapshot.exists && !snapshot.valid) {
-    await prompter.note(onboardHelpers.summarizeExistingConfig(baseConfig), i18n.t.config.invalid);
+    await prompter.note(onboardHelpers.summarizeExistingConfig(baseConfig), "配置无效");
     if (snapshot.issues.length > 0) {
       await prompter.note(
         [
           ...snapshot.issues.map((iss) => `- ${iss.path}: ${iss.message}`),
           "",
-          "Docs: https://docs.openclaw.ai/gateway/configuration",
+          "文档: https://docs.openclaw.ai/gateway/configuration",
         ].join("\n"),
-        "Config issues",
+        "配置问题",
       );
     }
     await prompter.outro(
-      `Config invalid. Run \`${formatCliCommand("openclaw doctor")}\` to repair it, then re-run onboarding.`,
+      `配置无效。请运行 \`${formatCliCommand("openclaw doctor")}\` 修复后再重新运行入门向导。`,
     );
     runtime.exit(1);
     return;
   }
 
-  const quickstartHint = i18n.t.flow.quickstart.hint;
-  const manualHint = i18n.t.flow.advanced.hint;
+  const quickstartHint = `稍后通过 ${formatCliCommand("openclaw configure")} 配置详细信息。`;
+  const manualHint = "配置端口、网络、Tailscale 和认证选项。";
   const explicitFlowRaw = opts.flow?.trim();
   const normalizedExplicitFlow = explicitFlowRaw === "manual" ? "advanced" : explicitFlowRaw;
   if (
@@ -100,7 +110,7 @@ export async function runOnboardingWizard(
     normalizedExplicitFlow !== "quickstart" &&
     normalizedExplicitFlow !== "advanced"
   ) {
-    runtime.error("Invalid --flow (use quickstart, manual, or advanced).");
+    runtime.error("--flow 参数无效（请使用 quickstart、manual 或 advanced）。");
     runtime.exit(1);
     return;
   }
@@ -111,34 +121,28 @@ export async function runOnboardingWizard(
   let flow: WizardFlow =
     explicitFlow ??
     (await prompter.select({
-      message: i18n.t.flow.message,
+      message: "入门模式",
       options: [
-        { value: "quickstart", label: i18n.t.flow.quickstart.label, hint: quickstartHint },
-        { value: "advanced", label: i18n.t.flow.advanced.label, hint: manualHint },
+        { value: "quickstart", label: "快速开始", hint: quickstartHint },
+        { value: "advanced", label: "手动配置", hint: manualHint },
       ],
       initialValue: "quickstart",
     }));
 
   if (opts.mode === "remote" && flow === "quickstart") {
-    await prompter.note(
-      "QuickStart only supports local gateways. Switching to Manual mode.",
-      i18n.t.gateway.quickstartNote,
-    );
+    await prompter.note("快速开始仅支持本地网关。正在切换至手动模式。", "快速开始");
     flow = "advanced";
   }
 
   if (snapshot.exists) {
-    await prompter.note(
-      onboardHelpers.summarizeExistingConfig(baseConfig),
-      i18n.t.config.existingDetected,
-    );
+    await prompter.note(onboardHelpers.summarizeExistingConfig(baseConfig), "检测到现有配置");
 
     const action = await prompter.select({
-      message: i18n.t.config.handlingMessage,
+      message: "配置处理方式",
       options: [
-        { value: "keep", label: i18n.t.config.keep },
-        { value: "modify", label: i18n.t.config.modify },
-        { value: "reset", label: i18n.t.config.reset },
+        { value: "keep", label: "使用现有值" },
+        { value: "modify", label: "更新值" },
+        { value: "reset", label: "重置" },
       ],
     });
 
@@ -146,16 +150,16 @@ export async function runOnboardingWizard(
       const workspaceDefault =
         baseConfig.agents?.defaults?.workspace ?? onboardHelpers.DEFAULT_WORKSPACE;
       const resetScope = (await prompter.select({
-        message: i18n.t.config.resetScope,
+        message: "重置范围",
         options: [
-          { value: "config", label: i18n.t.config.configOnly },
+          { value: "config", label: "仅配置" },
           {
             value: "config+creds+sessions",
-            label: i18n.t.config.configCredsSessions,
+            label: "配置 + 凭据 + 会话",
           },
           {
             value: "full",
-            label: i18n.t.config.fullReset,
+            label: "完全重置（配置 + 凭据 + 会话 + 工作空间）",
           },
         ],
       })) as ResetScope;
@@ -218,68 +222,91 @@ export async function runOnboardingWizard(
   if (flow === "quickstart") {
     const formatBind = (value: "loopback" | "lan" | "auto" | "custom" | "tailnet") => {
       if (value === "loopback") {
-        return i18n.t.gateway.bindLoopback;
+        return "本地回环 (127.0.0.1)";
       }
       if (value === "lan") {
-        return i18n.t.gateway.bindLan;
+        return "局域网";
       }
       if (value === "custom") {
-        return i18n.t.gateway.bindCustom;
+        return "自定义 IP";
       }
       if (value === "tailnet") {
-        return i18n.t.gateway.bindTailnet;
+        return "Tailnet (Tailscale IP)";
       }
-      return i18n.t.gateway.bindAuto;
+      return "自动";
     };
     const formatAuth = (value: GatewayAuthChoice) => {
       if (value === "token") {
-        return i18n.t.gateway.authToken;
+        return "令牌（默认）";
       }
-      return i18n.t.gateway.authPassword;
+      return "密码";
     };
     const formatTailscale = (value: "off" | "serve" | "funnel") => {
       if (value === "off") {
-        return i18n.t.gateway.tailscaleOff;
+        return "关闭";
       }
       if (value === "serve") {
-        return i18n.t.gateway.tailscaleServe;
+        return "Serve";
       }
-      return i18n.t.gateway.tailscaleFunnel;
+      return "Funnel";
     };
     const quickstartLines = quickstartGateway.hasExisting
       ? [
-          i18n.t.gateway.keepingSettings,
-          `${i18n.t.gateway.port}: ${quickstartGateway.port}`,
-          `${i18n.t.gateway.bind}: ${formatBind(quickstartGateway.bind)}`,
+          "保留您当前的网关设置：",
+          `网关端口: ${quickstartGateway.port}`,
+          `网关绑定: ${formatBind(quickstartGateway.bind)}`,
           ...(quickstartGateway.bind === "custom" && quickstartGateway.customBindHost
-            ? [`${i18n.t.gateway.customIp}: ${quickstartGateway.customBindHost}`]
+            ? [`网关自定义 IP: ${quickstartGateway.customBindHost}`]
             : []),
-          `${i18n.t.gateway.auth}: ${formatAuth(quickstartGateway.authMode)}`,
-          `${i18n.t.gateway.tailscale}: ${formatTailscale(quickstartGateway.tailscaleMode)}`,
-          i18n.t.gateway.directToChannels,
+          `网关认证: ${formatAuth(quickstartGateway.authMode)}`,
+          `Tailscale 暴露: ${formatTailscale(quickstartGateway.tailscaleMode)}`,
+          "直接连接聊天频道。",
         ]
       : [
-          `${i18n.t.gateway.port}: ${DEFAULT_GATEWAY_PORT}`,
-          `${i18n.t.gateway.bind}: ${i18n.t.gateway.bindLoopback}`,
-          `${i18n.t.gateway.auth}: ${i18n.t.gateway.authToken}`,
-          `${i18n.t.gateway.tailscale}: ${i18n.t.gateway.tailscaleOff}`,
-          i18n.t.gateway.directToChannels,
+          `网关端口: ${DEFAULT_GATEWAY_PORT}`,
+          "网关绑定: 本地回环 (127.0.0.1)",
+          "网关认证: 令牌（默认）",
+          "Tailscale 暴露: 关闭",
+          "直接连接聊天频道。",
         ];
-    await prompter.note(quickstartLines.join("\n"), i18n.t.gateway.quickstartNote);
+    await prompter.note(quickstartLines.join("\n"), "快速开始");
   }
 
   const localPort = resolveGatewayPort(baseConfig);
   const localUrl = `ws://127.0.0.1:${localPort}`;
+  let localGatewayPassword =
+    process.env.OPENCLAW_GATEWAY_PASSWORD ??
+    normalizeSecretInputString(baseConfig.gateway?.auth?.password);
+  try {
+    const resolvedGatewayPassword = await resolveOnboardingSecretInputString({
+      config: baseConfig,
+      value: baseConfig.gateway?.auth?.password,
+      path: "gateway.auth.password",
+      env: process.env,
+    });
+    if (resolvedGatewayPassword) {
+      localGatewayPassword = resolvedGatewayPassword;
+    }
+  } catch (error) {
+    await prompter.note(
+      [
+        "无法解析入门探测所需的 gateway.auth.password SecretRef。",
+        error instanceof Error ? error.message : String(error),
+      ].join("\n"),
+      "网关认证",
+    );
+  }
+
   const localProbe = await onboardHelpers.probeGatewayReachable({
     url: localUrl,
     token: baseConfig.gateway?.auth?.token ?? process.env.OPENCLAW_GATEWAY_TOKEN,
-    password: baseConfig.gateway?.auth?.password ?? process.env.OPENCLAW_GATEWAY_PASSWORD,
+    password: localGatewayPassword,
   });
   const remoteUrl = baseConfig.gateway?.remote?.url?.trim() ?? "";
   const remoteProbe = remoteUrl
     ? await onboardHelpers.probeGatewayReachable({
         url: remoteUrl,
-        token: baseConfig.gateway?.remote?.token,
+        token: normalizeSecretInputString(baseConfig.gateway?.remote?.token),
       })
     : null;
 
@@ -288,23 +315,21 @@ export async function runOnboardingWizard(
     (flow === "quickstart"
       ? "local"
       : ((await prompter.select({
-          message: i18n.t.gateway.modeMessage,
+          message: "您想设置什么？",
           options: [
             {
               value: "local",
-              label: i18n.t.gateway.local.label,
-              hint: localProbe.ok
-                ? `${i18n.t.gateway.local.hintReachable} (${localUrl})`
-                : `${i18n.t.gateway.local.hintUnreachable} (${localUrl})`,
+              label: "本地网关（本机）",
+              hint: localProbe.ok ? `网关可访问（${localUrl}）` : `未检测到网关（${localUrl}）`,
             },
             {
               value: "remote",
-              label: i18n.t.gateway.remote.label,
+              label: "远程网关（仅信息）",
               hint: !remoteUrl
-                ? i18n.t.gateway.remote.hintNoUrl
+                ? "尚未配置远程 URL"
                 : remoteProbe?.ok
-                  ? `${i18n.t.gateway.remote.hintReachable} (${remoteUrl})`
-                  : `${i18n.t.gateway.remote.hintUnreachable} (${remoteUrl})`,
+                  ? `网关可访问（${remoteUrl}）`
+                  : `已配置但不可访问（${remoteUrl}）`,
             },
           ],
         })) as OnboardMode));
@@ -312,11 +337,13 @@ export async function runOnboardingWizard(
   if (mode === "remote") {
     const { promptRemoteGatewayConfig } = await import("../commands/onboard-remote.js");
     const { logConfigUpdated } = await import("../config/logging.js");
-    let nextConfig = await promptRemoteGatewayConfig(baseConfig, prompter, i18n);
+    let nextConfig = await promptRemoteGatewayConfig(baseConfig, prompter, {
+      secretInputMode: opts.secretInputMode,
+    });
     nextConfig = onboardHelpers.applyWizardMetadata(nextConfig, { command: "onboard", mode });
     await writeConfigFile(nextConfig);
     logConfigUpdated(runtime);
-    await prompter.outro(i18n.t.gateway.configured);
+    await prompter.outro("远程网关已配置。");
     return;
   }
 
@@ -325,7 +352,7 @@ export async function runOnboardingWizard(
     (flow === "quickstart"
       ? (baseConfig.agents?.defaults?.workspace ?? onboardHelpers.DEFAULT_WORKSPACE)
       : await prompter.text({
-          message: i18n.t.workspace.message,
+          message: "工作空间目录",
           initialValue: baseConfig.agents?.defaults?.workspace ?? onboardHelpers.DEFAULT_WORKSPACE,
         }));
 
@@ -368,7 +395,6 @@ export async function runOnboardingWizard(
       prompter,
       runtime,
       setDefaultModel: true,
-      i18n,
       opts: {
         tokenProvider: opts.tokenProvider,
         token: opts.authChoice === "apiKey" && opts.token ? opts.token : undefined,
@@ -385,7 +411,6 @@ export async function runOnboardingWizard(
       ignoreAllowlist: true,
       includeVllm: true,
       preferredProvider: resolvePreferredProviderForAuthChoice(authChoice),
-      i18n,
     });
     if (modelSelection.config) {
       nextConfig = modelSelection.config;
@@ -404,15 +429,15 @@ export async function runOnboardingWizard(
     nextConfig,
     localPort,
     quickstartGateway,
+    secretInputMode: opts.secretInputMode,
     prompter,
     runtime,
-    i18n,
   });
   nextConfig = gateway.nextConfig;
   const settings = gateway.settings;
 
   if (opts.skipChannels ?? opts.skipProviders) {
-    await prompter.note(i18n.t.channels.skipping, i18n.t.channels.header);
+    await prompter.note("跳过频道设置。", "频道");
   } else {
     const { listChannelPlugins } = await import("../channels/plugins/index.js");
     const { setupChannels } = await import("../commands/onboard-channels.js");
@@ -428,7 +453,7 @@ export async function runOnboardingWizard(
       skipDmPolicyPrompt: flow === "quickstart",
       skipConfirm: flow === "quickstart",
       quickstartDefaults: flow === "quickstart",
-      i18n,
+      secretInputMode: opts.secretInputMode,
     });
   }
 
@@ -440,15 +465,15 @@ export async function runOnboardingWizard(
   });
 
   if (opts.skipSkills) {
-    await prompter.note(i18n.t.skills.skipping, i18n.t.skills.header);
+    await prompter.note("跳过技能设置。", "技能");
   } else {
     const { setupSkills } = await import("../commands/onboard-skills.js");
-    nextConfig = await setupSkills(nextConfig, workspaceDir, runtime, prompter, i18n);
+    nextConfig = await setupSkills(nextConfig, workspaceDir, runtime, prompter);
   }
 
   // Setup hooks (session memory on /new)
   const { setupInternalHooks } = await import("../commands/onboard-hooks.js");
-  nextConfig = await setupInternalHooks(nextConfig, runtime, prompter, i18n);
+  nextConfig = await setupInternalHooks(nextConfig, runtime, prompter);
 
   nextConfig = onboardHelpers.applyWizardMetadata(nextConfig, { command: "onboard", mode });
   await writeConfigFile(nextConfig);
@@ -463,7 +488,6 @@ export async function runOnboardingWizard(
     settings,
     prompter,
     runtime,
-    i18n,
   });
   if (launchedTui) {
     return;

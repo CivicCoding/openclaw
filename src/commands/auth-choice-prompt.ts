@@ -24,7 +24,7 @@ export async function promptAuthChoiceGrouped(params: {
     ];
 
     const providerSelection = (await params.prompter.select({
-      message: "Model/auth provider",
+      message: "模型/认证供应商",
       options: providerOptions,
     })) as string;
 
@@ -35,10 +35,7 @@ export async function promptAuthChoiceGrouped(params: {
     const group = availableGroups.find((candidate) => candidate.value === providerSelection);
 
     if (!group || group.options.length === 0) {
-      await params.prompter.note(
-        "No auth methods available for that provider.",
-        "Model/auth choice",
-      );
+      await params.prompter.note("该供应商没有可用的认证方法。", "模型/认证选择");
       continue;
     }
 
@@ -47,8 +44,8 @@ export async function promptAuthChoiceGrouped(params: {
     }
 
     const methodSelection = await params.prompter.select({
-      message: `${group.label} auth method`,
-      options: [...group.options, { value: BACK_VALUE, label: "Back" }],
+      message: `${group.label} 认证方法`,
+      options: [...group.options, { value: BACK_VALUE, label: "返回" }],
     });
 
     if (methodSelection === BACK_VALUE) {

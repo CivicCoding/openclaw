@@ -4,8 +4,7 @@ import { normalizeApiKeyInput, validateApiKeyInput } from "./auth-choice.api-key
 import {
   normalizeSecretInputModeInput,
   createAuthChoiceAgentModelNoter,
-  createAuthChoiceDefaultModelApplier,
-  createAuthChoiceModelStateBridge,
+  createAuthChoiceDefaultModelApplierForMutableState,
   ensureApiKeyFromOptionEnvOrPrompt,
   normalizeTokenProviderInput,
 } from "./auth-choice.apply-helpers.js";
@@ -107,6 +106,7 @@ const API_KEY_TOKEN_PROVIDER_AUTH_CHOICE: Record<string, AuthChoice> = {
   opencode: "opencode-zen",
   kilocode: "kilocode-api-key",
   qianfan: "qianfan-api-key",
+  shengsuanyun: "shengsuanyun-api-key",
 };
 
 const ZAI_AUTH_CHOICE_ENDPOINT: Partial<
@@ -150,7 +150,7 @@ const SIMPLE_API_KEY_PROVIDER_FLOWS: Partial<Record<AuthChoice, SimpleApiKeyProv
     profileId: "shengsuanyun:default",
     expectedProviders: ["shengsuanyun"],
     envLabel: "SHENGSUANYUN_API_KEY",
-    promptMessage: "Enter 胜算云 API key",
+    promptMessage: "输入胜算云 API key",
     setCredential: setShengSuanYunApiKey,
     defaultModel: SHENGSUANYUN_DEFAULT_MODEL_REF,
     applyDefaultConfig: applyShengSuanYunConfig,
@@ -162,7 +162,7 @@ const SIMPLE_API_KEY_PROVIDER_FLOWS: Partial<Record<AuthChoice, SimpleApiKeyProv
     profileId: "vercel-ai-gateway:default",
     expectedProviders: ["vercel-ai-gateway"],
     envLabel: "AI_GATEWAY_API_KEY",
-    promptMessage: "Enter Vercel AI Gateway API key",
+    promptMessage: "输入 Vercel AI Gateway API key",
     setCredential: setVercelAiGatewayApiKey,
     defaultModel: VERCEL_AI_GATEWAY_DEFAULT_MODEL_REF,
     applyDefaultConfig: applyVercelAiGatewayConfig,
@@ -174,7 +174,7 @@ const SIMPLE_API_KEY_PROVIDER_FLOWS: Partial<Record<AuthChoice, SimpleApiKeyProv
     profileId: "moonshot:default",
     expectedProviders: ["moonshot"],
     envLabel: "MOONSHOT_API_KEY",
-    promptMessage: "Enter Moonshot API key",
+    promptMessage: "输入 Moonshot API key",
     setCredential: setMoonshotApiKey,
     defaultModel: MOONSHOT_DEFAULT_MODEL_REF,
     applyDefaultConfig: applyMoonshotConfig,
@@ -185,7 +185,7 @@ const SIMPLE_API_KEY_PROVIDER_FLOWS: Partial<Record<AuthChoice, SimpleApiKeyProv
     profileId: "moonshot:default",
     expectedProviders: ["moonshot"],
     envLabel: "MOONSHOT_API_KEY",
-    promptMessage: "Enter Moonshot API key (.cn)",
+    promptMessage: "输入 Moonshot API key (.cn)",
     setCredential: setMoonshotApiKey,
     defaultModel: MOONSHOT_DEFAULT_MODEL_REF,
     applyDefaultConfig: applyMoonshotConfigCn,
@@ -196,7 +196,7 @@ const SIMPLE_API_KEY_PROVIDER_FLOWS: Partial<Record<AuthChoice, SimpleApiKeyProv
     profileId: "kimi-coding:default",
     expectedProviders: ["kimi-code", "kimi-coding"],
     envLabel: "KIMI_API_KEY",
-    promptMessage: "Enter Kimi Coding API key",
+    promptMessage: "输入 Kimi Coding API key",
     setCredential: setKimiCodingApiKey,
     defaultModel: KIMI_CODING_MODEL_REF,
     applyDefaultConfig: applyKimiCodeConfig,
@@ -213,7 +213,7 @@ const SIMPLE_API_KEY_PROVIDER_FLOWS: Partial<Record<AuthChoice, SimpleApiKeyProv
     profileId: "xiaomi:default",
     expectedProviders: ["xiaomi"],
     envLabel: "XIAOMI_API_KEY",
-    promptMessage: "Enter Xiaomi API key",
+    promptMessage: "输入 Xiaomi API key",
     setCredential: setXiaomiApiKey,
     defaultModel: XIAOMI_DEFAULT_MODEL_REF,
     applyDefaultConfig: applyXiaomiConfig,
@@ -225,7 +225,7 @@ const SIMPLE_API_KEY_PROVIDER_FLOWS: Partial<Record<AuthChoice, SimpleApiKeyProv
     profileId: "mistral:default",
     expectedProviders: ["mistral"],
     envLabel: "MISTRAL_API_KEY",
-    promptMessage: "Enter Mistral API key",
+    promptMessage: "输入 Mistral API key",
     setCredential: setMistralApiKey,
     defaultModel: MISTRAL_DEFAULT_MODEL_REF,
     applyDefaultConfig: applyMistralConfig,
@@ -237,7 +237,7 @@ const SIMPLE_API_KEY_PROVIDER_FLOWS: Partial<Record<AuthChoice, SimpleApiKeyProv
     profileId: "venice:default",
     expectedProviders: ["venice"],
     envLabel: "VENICE_API_KEY",
-    promptMessage: "Enter Venice AI API key",
+    promptMessage: "输入 Venice AI API key",
     setCredential: setVeniceApiKey,
     defaultModel: VENICE_DEFAULT_MODEL_REF,
     applyDefaultConfig: applyVeniceConfig,
@@ -255,7 +255,7 @@ const SIMPLE_API_KEY_PROVIDER_FLOWS: Partial<Record<AuthChoice, SimpleApiKeyProv
     profileId: "opencode:default",
     expectedProviders: ["opencode"],
     envLabel: "OPENCODE_API_KEY",
-    promptMessage: "Enter OpenCode Zen API key",
+    promptMessage: "输入 OpenCode Zen API key",
     setCredential: setOpencodeZenApiKey,
     defaultModel: OPENCODE_ZEN_DEFAULT_MODEL,
     applyDefaultConfig: applyOpencodeZenConfig,
@@ -273,7 +273,7 @@ const SIMPLE_API_KEY_PROVIDER_FLOWS: Partial<Record<AuthChoice, SimpleApiKeyProv
     profileId: "together:default",
     expectedProviders: ["together"],
     envLabel: "TOGETHER_API_KEY",
-    promptMessage: "Enter Together AI API key",
+    promptMessage: "输入 Together AI API key",
     setCredential: setTogetherApiKey,
     defaultModel: TOGETHER_DEFAULT_MODEL_REF,
     applyDefaultConfig: applyTogetherConfig,
@@ -290,7 +290,7 @@ const SIMPLE_API_KEY_PROVIDER_FLOWS: Partial<Record<AuthChoice, SimpleApiKeyProv
     profileId: "qianfan:default",
     expectedProviders: ["qianfan"],
     envLabel: "QIANFAN_API_KEY",
-    promptMessage: "Enter QIANFAN API key",
+    promptMessage: "输入 QIANFAN API key",
     setCredential: setQianfanApiKey,
     defaultModel: QIANFAN_DEFAULT_MODEL_REF,
     applyDefaultConfig: applyQianfanConfig,
@@ -307,7 +307,7 @@ const SIMPLE_API_KEY_PROVIDER_FLOWS: Partial<Record<AuthChoice, SimpleApiKeyProv
     profileId: "kilocode:default",
     expectedProviders: ["kilocode"],
     envLabel: "KILOCODE_API_KEY",
-    promptMessage: "Enter Kilo Gateway API key",
+    promptMessage: "输入 Kilo Gateway API key",
     setCredential: setKilocodeApiKey,
     defaultModel: KILOCODE_DEFAULT_MODEL_REF,
     applyDefaultConfig: applyKilocodeConfig,
@@ -319,7 +319,7 @@ const SIMPLE_API_KEY_PROVIDER_FLOWS: Partial<Record<AuthChoice, SimpleApiKeyProv
     profileId: "synthetic:default",
     expectedProviders: ["synthetic"],
     envLabel: "SYNTHETIC_API_KEY",
-    promptMessage: "Enter Synthetic API key",
+    promptMessage: "输入 Synthetic API key",
     setCredential: setSyntheticApiKey,
     defaultModel: SYNTHETIC_DEFAULT_MODEL_REF,
     applyDefaultConfig: applySyntheticConfig,
@@ -334,16 +334,13 @@ export async function applyAuthChoiceApiProviders(
 ): Promise<ApplyAuthChoiceResult | null> {
   let nextConfig = params.config;
   let agentModelOverride: string | undefined;
-  const noteAgentModel = createAuthChoiceAgentModelNoter(params, params.i18n);
-  const applyProviderDefaultModel = createAuthChoiceDefaultModelApplier(
+  const noteAgentModel = createAuthChoiceAgentModelNoter(params);
+  const applyProviderDefaultModel = createAuthChoiceDefaultModelApplierForMutableState(
     params,
-    createAuthChoiceModelStateBridge({
-      getConfig: () => nextConfig,
-      setConfig: (config) => (nextConfig = config),
-      getAgentModelOverride: () => agentModelOverride,
-      setAgentModelOverride: (model) => (agentModelOverride = model),
-    }),
-    params.i18n,
+    () => nextConfig,
+    (config) => (nextConfig = config),
+    () => agentModelOverride,
+    (model) => (agentModelOverride = model),
   );
 
   let authChoice = params.authChoice;
@@ -409,7 +406,6 @@ export async function applyAuthChoiceApiProviders(
       normalize,
       validate,
       prompter: params.prompter,
-      i18n: params.i18n,
     });
 
     nextConfig = applyAuthProfileConfig(nextConfig, {
@@ -451,11 +447,10 @@ export async function applyAuthChoiceApiProviders(
         expectedProviders: ["litellm"],
         provider: "litellm",
         envLabel: "LITELLM_API_KEY",
-        promptMessage: "Enter LiteLLM API key",
+        promptMessage: "输入 LiteLLM API key",
         normalize: normalizeApiKeyInput,
         validate: validateApiKeyInput,
         prompter: params.prompter,
-        i18n: params.i18n,
         setCredential: async (apiKey, mode) =>
           setLitellmApiKey(apiKey, params.agentDir, { secretInputMode: mode }),
         noteMessage:
@@ -512,14 +507,14 @@ export async function applyAuthChoiceApiProviders(
     const ensureAccountGateway = async () => {
       if (!accountId) {
         const value = await params.prompter.text({
-          message: "Enter Cloudflare Account ID",
+          message: "输入 Cloudflare Account ID",
           validate: (val) => (String(val ?? "").trim() ? undefined : "Account ID is required"),
         });
         accountId = String(value ?? "").trim();
       }
       if (!gatewayId) {
         const value = await params.prompter.text({
-          message: "Enter Cloudflare AI Gateway ID",
+          message: "输入 Cloudflare AI Gateway ID",
           validate: (val) => (String(val ?? "").trim() ? undefined : "Gateway ID is required"),
         });
         gatewayId = String(value ?? "").trim();
@@ -536,11 +531,10 @@ export async function applyAuthChoiceApiProviders(
       expectedProviders: ["cloudflare-ai-gateway"],
       provider: "cloudflare-ai-gateway",
       envLabel: "CLOUDFLARE_AI_GATEWAY_API_KEY",
-      promptMessage: "Enter Cloudflare AI Gateway API key",
+      promptMessage: "输入 Cloudflare AI Gateway API key",
       normalize: normalizeApiKeyInput,
       validate: validateApiKeyInput,
       prompter: params.prompter,
-      i18n: params.i18n,
       setCredential: async (apiKey, mode) =>
         setCloudflareAiGatewayConfig(accountId, gatewayId, apiKey, params.agentDir, {
           secretInputMode: mode,
@@ -578,11 +572,10 @@ export async function applyAuthChoiceApiProviders(
       config: nextConfig,
       expectedProviders: ["google"],
       envLabel: "GEMINI_API_KEY",
-      promptMessage: "Enter Gemini API key",
+      promptMessage: "输入 Gemini API key",
       normalize: normalizeApiKeyInput,
       validate: validateApiKeyInput,
       prompter: params.prompter,
-      i18n: params.i18n,
       setCredential: async (apiKey, mode) =>
         setGeminiApiKey(apiKey, params.agentDir, { secretInputMode: mode }),
     });
@@ -595,10 +588,7 @@ export async function applyAuthChoiceApiProviders(
       const applied = applyGoogleGeminiModelDefault(nextConfig);
       nextConfig = applied.next;
       if (applied.changed) {
-        await params.prompter.note(
-          `Default model set to ${GOOGLE_GEMINI_DEFAULT_MODEL}`,
-          "Model configured",
-        );
+        await params.prompter.note(`设置默认模型 ${GOOGLE_GEMINI_DEFAULT_MODEL}`, "模型设置");
       }
     } else {
       agentModelOverride = GOOGLE_GEMINI_DEFAULT_MODEL;
@@ -624,11 +614,10 @@ export async function applyAuthChoiceApiProviders(
       config: nextConfig,
       expectedProviders: ["zai"],
       envLabel: "ZAI_API_KEY",
-      promptMessage: "Enter Z.AI API key",
+      promptMessage: "输入 Z.AI API key",
       normalize: normalizeApiKeyInput,
       validate: validateApiKeyInput,
       prompter: params.prompter,
-      i18n: params.i18n,
       setCredential: async (apiKey, mode) =>
         setZaiApiKey(apiKey, params.agentDir, { secretInputMode: mode }),
     });

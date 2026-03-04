@@ -42,7 +42,7 @@ describe("applyAuthChoiceOpenAI", () => {
       prompter,
       runtime,
       setDefaultModel: true,
-      i18n: createI18nContext("en"),
+      i18n: createI18nContext(),
     });
 
     expect(result).not.toBeNull();
@@ -77,7 +77,7 @@ describe("applyAuthChoiceOpenAI", () => {
       prompter,
       runtime,
       setDefaultModel: true,
-      i18n: createI18nContext("en"),
+      i18n: createI18nContext(),
     });
 
     expect(result).not.toBeNull();
@@ -102,7 +102,7 @@ describe("applyAuthChoiceOpenAI", () => {
       prompter,
       runtime,
       setDefaultModel: true,
-      i18n: createI18nContext("en"),
+      i18n: createI18nContext(),
       opts: {
         tokenProvider: "openai",
         token: "sk-openai-token",

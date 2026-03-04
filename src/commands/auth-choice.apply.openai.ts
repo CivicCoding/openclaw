@@ -24,7 +24,7 @@ export async function applyAuthChoiceOpenAI(
   params: ApplyAuthChoiceParams,
 ): Promise<ApplyAuthChoiceResult | null> {
   const requestedSecretInputMode = normalizeSecretInputModeInput(params.opts?.secretInputMode);
-  const noteAgentModel = createAuthChoiceAgentModelNoter(params, params.i18n);
+  const noteAgentModel = createAuthChoiceAgentModelNoter(params);
   let authChoice = params.authChoice;
   if (authChoice === "apiKey" && params.opts?.tokenProvider === "openai") {
     authChoice = "openai-api-key";
@@ -64,7 +64,6 @@ export async function applyAuthChoiceOpenAI(
       prompter: params.prompter,
       setCredential: async (apiKey, mode) =>
         setOpenaiApiKey(apiKey, params.agentDir, { secretInputMode: mode }),
-      i18n: params.i18n,
     });
     nextConfig = applyAuthProfileConfig(nextConfig, {
       profileId: "openai:default",
@@ -107,10 +106,7 @@ export async function applyAuthChoiceOpenAI(
         const applied = applyOpenAICodexModelDefault(nextConfig);
         nextConfig = applied.next;
         if (applied.changed) {
-          await params.prompter.note(
-            `Default model set to ${OPENAI_CODEX_DEFAULT_MODEL}`,
-            "Model configured",
-          );
+          await params.prompter.note(`设置默认模型 ${OPENAI_CODEX_DEFAULT_MODEL}`, "模型设置");
         }
       } else {
         agentModelOverride = OPENAI_CODEX_DEFAULT_MODEL;

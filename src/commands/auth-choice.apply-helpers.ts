@@ -8,7 +8,6 @@ import {
   resolveDefaultSecretProviderAlias,
 } from "../secrets/ref-contract.js";
 import { resolveSecretRefString } from "../secrets/resolve.js";
-import { type I18nContext } from "../wizard/i18n/index.js";
 import type { WizardPrompter } from "../wizard/prompts.js";
 import { formatApiKeyPreview } from "./auth-choice.api-key.js";
 import type { ApplyAuthChoiceParams } from "./auth-choice.apply.js";
@@ -19,6 +18,25 @@ const ENV_SOURCE_LABEL_RE = /(?:^|:\s)([A-Z][A-Z0-9_]*)$/;
 const ENV_SECRET_REF_ID_RE = /^[A-Z][A-Z0-9_]{0,127}$/;
 
 type SecretRefChoice = "env" | "provider";
+
+export type SecretInputModePromptCopy = {
+  modeMessage?: string;
+  plaintextLabel?: string;
+  plaintextHint?: string;
+  refLabel?: string;
+  refHint?: string;
+};
+
+export type SecretRefOnboardingPromptCopy = {
+  sourceMessage?: string;
+  envVarMessage?: string;
+  envVarPlaceholder?: string;
+  envVarFormatError?: string;
+  envVarMissingError?: (envVar: string) => string;
+  noProvidersMessage?: string;
+  envValidatedMessage?: (envVar: string) => string;
+  providerValidatedMessage?: (provider: string, id: string, source: "file" | "exec") => string;
+};
 
 function formatErrorMessage(error: unknown): string {
   if (error instanceof Error && typeof error.message === "string" && error.message.trim()) {
@@ -45,16 +63,16 @@ function resolveRefFallbackInput(params: {
   config: OpenClawConfig;
   provider: string;
   preferredEnvVar?: string;
-  i18n: I18nContext;
 }): { ref: SecretRef; resolvedValue: string } {
   const fallbackEnvVar = params.preferredEnvVar ?? resolveDefaultProviderEnvVar(params.provider);
-  const t = params.i18n.t.authChoice.errors;
   if (!fallbackEnvVar) {
-    throw new Error(t.noDefaultEnvVar.replace("{provider}", params.provider));
+    throw new Error(
+      `未找到提供商"${params.provider}"的默认环境变量映射。设置特定于提供商的环境变量，或在交互式终端中重新运行引导以配置引用。`,
+    );
   }
   const value = process.env[fallbackEnvVar]?.trim();
   if (!value) {
-    throw new Error(t.envVarRequired.replace("{envVar}", fallbackEnvVar));
+    throw new Error(`非交互式引导中的 --secret-input-mode ref 需要环境变量"{fallbackEnvVar}"。`);
   }
   return {
     ref: {
@@ -68,33 +86,32 @@ function resolveRefFallbackInput(params: {
   };
 }
 
-async function resolveApiKeyRefForOnboarding(params: {
+export async function promptSecretRefForOnboarding(params: {
   provider: string;
   config: OpenClawConfig;
   prompter: WizardPrompter;
   preferredEnvVar?: string;
-  i18n: I18nContext;
+  copy?: SecretRefOnboardingPromptCopy;
 }): Promise<{ ref: SecretRef; resolvedValue: string }> {
   const defaultEnvVar =
     params.preferredEnvVar ?? resolveDefaultProviderEnvVar(params.provider) ?? "";
   const defaultFilePointer = resolveDefaultFilePointerId(params.provider);
   let sourceChoice: SecretRefChoice = "env";
-  const t = params.i18n.t.authChoice;
 
   while (true) {
     const sourceRaw: SecretRefChoice = await params.prompter.select<SecretRefChoice>({
-      message: t.secretStorage.message,
+      message: params.copy?.sourceMessage ?? "API key 保存在什么地方?",
       initialValue: sourceChoice,
       options: [
         {
           value: "env",
-          label: t.secretStorage.envOption.label,
-          hint: t.secretStorage.envOption.hint,
+          label: "环境变量",
+          hint: "从运行时环境引用变量",
         },
         {
           value: "provider",
-          label: t.secretStorage.providerOption.label,
-          hint: t.secretStorage.providerOption.hint,
+          label: "已配置的密钥提供程序",
+          hint: "使用已配置的文件或 exec 密钥提供程序",
         },
       ],
     });
@@ -103,16 +120,22 @@ async function resolveApiKeyRefForOnboarding(params: {
 
     if (source === "env") {
       const envVarRaw = await params.prompter.text({
-        message: t.envVar.message,
+        message: params.copy?.envVarMessage ?? "Environment variable name",
         initialValue: defaultEnvVar || undefined,
-        placeholder: t.envVar.placeholder,
+        placeholder: params.copy?.envVarPlaceholder ?? "OPENAI_API_KEY",
         validate: (value) => {
           const candidate = value.trim();
           if (!ENV_SECRET_REF_ID_RE.test(candidate)) {
-            return t.envVar.invalidFormat;
+            return (
+              params.copy?.envVarFormatError ??
+              'Use an env var name like "OPENAI_API_KEY" (uppercase letters, numbers, underscores).'
+            );
           }
           if (!process.env[candidate]?.trim()) {
-            return t.envVar.missingOrEmpty.replace("{name}", candidate);
+            return (
+              params.copy?.envVarMissingError?.(candidate) ??
+              `Environment variable "${candidate}" is missing or empty in this session.`
+            );
           }
           return undefined;
         },
@@ -121,7 +144,7 @@ async function resolveApiKeyRefForOnboarding(params: {
       const envVar =
         envCandidate && ENV_SECRET_REF_ID_RE.test(envCandidate) ? envCandidate : defaultEnvVar;
       if (!envVar) {
-        throw new Error(t.envVar.noValidName.replace("{provider}", params.provider));
+        throw new Error(`未找到提供商 "${params.provider}" 的有效环境变量名称。`);
       }
       const ref: SecretRef = {
         source: "env",
@@ -135,8 +158,9 @@ async function resolveApiKeyRefForOnboarding(params: {
         env: process.env,
       });
       await params.prompter.note(
-        t.envVar.validated.replace("{name}", envVar),
-        t.envVar.validatedTitle,
+        params.copy?.envValidatedMessage?.(envVar) ??
+          `Validated environment variable ${envVar}. OpenClaw will store a reference, not the key value.`,
+        "Reference validated",
       );
       return { ref, resolvedValue };
     }
@@ -146,8 +170,9 @@ async function resolveApiKeyRefForOnboarding(params: {
     );
     if (externalProviders.length === 0) {
       await params.prompter.note(
-        t.secretProvider.noProvidersConfigured,
-        t.secretProvider.noProvidersTitle,
+        params.copy?.noProvidersMessage ??
+          "No file/exec secret providers are configured yet. Add one under secrets.providers, or select Environment variable.",
+        "No providers configured",
       );
       continue;
     }
@@ -155,26 +180,28 @@ async function resolveApiKeyRefForOnboarding(params: {
       preferFirstProviderForSource: true,
     });
     const selectedProvider = await params.prompter.select<string>({
-      message: t.secretProvider.selectMessage,
+      message: "选择密钥提供程序",
       initialValue:
         externalProviders.find(([providerName]) => providerName === defaultProvider)?.[0] ??
         externalProviders[0]?.[0],
       options: externalProviders.map(([providerName, provider]) => ({
         value: providerName,
         label: providerName,
-        hint: provider?.source === "exec" ? t.secretProvider.execHint : t.secretProvider.fileHint,
+        hint: provider?.source === "exec" ? "Exec 提供程序" : "文件提供程序",
       })),
     });
     const providerEntry = params.config.secrets?.providers?.[selectedProvider];
     if (!providerEntry || (providerEntry.source !== "file" && providerEntry.source !== "exec")) {
       await params.prompter.note(
-        t.secretProvider.invalidProvider.replace("{name}", selectedProvider),
-        t.secretProvider.invalidProviderTitle,
+        `提供程序 "${selectedProvider}" 不是文件/exec 提供程序。`,
+        "无效的提供程序",
       );
       continue;
     }
     const idPrompt =
-      providerEntry.source === "file" ? t.secretId.fileMessage : t.secretId.execMessage;
+      providerEntry.source === "file"
+        ? "密钥 ID(json 模式使用 JSON 指针,或 singleValue 模式使用 'value')"
+        : "exec 提供程序的密钥 ID";
     const idDefault =
       providerEntry.source === "file"
         ? providerEntry.mode === "singleValue"
@@ -184,26 +211,25 @@ async function resolveApiKeyRefForOnboarding(params: {
     const idRaw = await params.prompter.text({
       message: idPrompt,
       initialValue: idDefault,
-      placeholder:
-        providerEntry.source === "file" ? t.secretId.filePlaceholder : t.secretId.execPlaceholder,
+      placeholder: providerEntry.source === "file" ? "/providers/openai/apiKey" : "openai/api-key",
       validate: (value) => {
         const candidate = value.trim();
         if (!candidate) {
-          return t.secretId.emptyError;
+          return "密钥 ID 不能为空。";
         }
         if (
           providerEntry.source === "file" &&
           providerEntry.mode !== "singleValue" &&
           !isValidFileSecretRefId(candidate)
         ) {
-          return t.secretId.invalidJsonPointer;
+          return '使用绝对 JSON 指针,如"/providers/openai/apiKey"。';
         }
         if (
           providerEntry.source === "file" &&
           providerEntry.mode === "singleValue" &&
           candidate !== "value"
         ) {
-          return t.secretId.invalidSingleValue;
+          return 'singleValue 模式需要 ID "value"。';
         }
         return undefined;
       },
@@ -220,21 +246,19 @@ async function resolveApiKeyRefForOnboarding(params: {
         env: process.env,
       });
       await params.prompter.note(
-        t.secretId.validated
-          .replace("{source}", providerEntry.source)
-          .replace("{provider}", selectedProvider)
-          .replace("{id}", id),
-        t.secretId.validatedTitle,
+        params.copy?.providerValidatedMessage?.(selectedProvider, id, providerEntry.source) ??
+          `Validated ${providerEntry.source} reference ${selectedProvider}:${id}. OpenClaw will store a reference, not the key value.`,
+        "Reference validated",
       );
       return { ref, resolvedValue };
     } catch (error) {
       await params.prompter.note(
         [
-          t.secretId.validationFailed.replace("{provider}", selectedProvider).replace("{id}", id),
+          `无法验证提供程序引用 ${selectedProvider}:${id}。`,
           formatErrorMessage(error),
-          t.secretId.checkConfig,
+          "检查您的提供程序配置并重试。",
         ].join("\n"),
-        t.secretId.validationFailedTitle,
+        "引用检查失败",
       );
     }
   }
@@ -242,16 +266,14 @@ async function resolveApiKeyRefForOnboarding(params: {
 
 export function createAuthChoiceAgentModelNoter(
   params: ApplyAuthChoiceParams,
-  i18n: I18nContext,
 ): (model: string) => Promise<void> {
   return async (model: string) => {
     if (!params.agentId) {
       return;
     }
-    const t = i18n.t.authChoice.apiKeyPrompt;
     await params.prompter.note(
-      t.modelConfigured.replace("{model}", model).replace("{agentId}", params.agentId),
-      t.modelConfiguredTitle,
+      `代理 "${params.agentId}" 的默认模型已设置为 ${model}。`,
+      "模型已配置",
     );
   };
 }
@@ -286,14 +308,13 @@ export function createAuthChoiceModelStateBridge(bindings: {
 export function createAuthChoiceDefaultModelApplier(
   params: ApplyAuthChoiceParams,
   state: ApplyAuthChoiceModelState,
-  i18n: I18nContext,
 ): (
   options: Omit<
     Parameters<typeof applyDefaultModelChoice>[0],
     "config" | "setDefaultModel" | "noteAgentModel" | "prompter"
   >,
 ) => Promise<void> {
-  const noteAgentModel = createAuthChoiceAgentModelNoter(params, i18n);
+  const noteAgentModel = createAuthChoiceAgentModelNoter(params);
 
   return async (options) => {
     const applied = await applyDefaultModelChoice({
@@ -306,6 +327,24 @@ export function createAuthChoiceDefaultModelApplier(
     state.config = applied.config;
     state.agentModelOverride = applied.agentModelOverride ?? state.agentModelOverride;
   };
+}
+
+export function createAuthChoiceDefaultModelApplierForMutableState(
+  params: ApplyAuthChoiceParams,
+  getConfig: () => ApplyAuthChoiceParams["config"],
+  setConfig: (config: ApplyAuthChoiceParams["config"]) => void,
+  getAgentModelOverride: () => string | undefined,
+  setAgentModelOverride: (model: string | undefined) => void,
+): ReturnType<typeof createAuthChoiceDefaultModelApplier> {
+  return createAuthChoiceDefaultModelApplier(
+    params,
+    createAuthChoiceModelStateBridge({
+      getConfig,
+      setConfig,
+      getAgentModelOverride,
+      setAgentModelOverride,
+    }),
+  );
 }
 
 export function normalizeTokenProviderInput(
@@ -332,7 +371,7 @@ export function normalizeSecretInputModeInput(
 export async function resolveSecretInputModeForEnvSelection(params: {
   prompter: WizardPrompter;
   explicitMode?: SecretInputMode;
-  i18n: I18nContext;
+  copy?: SecretInputModePromptCopy;
 }): Promise<SecretInputMode> {
   if (params.explicitMode) {
     return params.explicitMode;
@@ -342,20 +381,19 @@ export async function resolveSecretInputModeForEnvSelection(params: {
   if (typeof params.prompter.select !== "function") {
     return "plaintext";
   }
-  const t = params.i18n.t.authChoice.apiKeyPrompt;
   const selected = await params.prompter.select<SecretInputMode>({
-    message: t.message,
+    message: params.copy?.modeMessage ?? "您想如何提供此 API 密钥?",
     initialValue: "plaintext",
     options: [
       {
         value: "plaintext",
-        label: t.plaintextLabel,
-        hint: t.plaintextHint,
+        label: params.copy?.plaintextLabel ?? "现在粘贴 API 密钥",
+        hint: params.copy?.plaintextHint ?? "将密钥直接存储在 OpenClaw 配置中",
       },
       {
         value: "ref",
-        label: t.refLabel,
-        hint: t.refHint,
+        label: params.copy?.refLabel ?? "使用外部密钥提供程序",
+        hint: params.copy?.refHint ?? "存储对环境变量或已配置的外部密钥提供程序的引用",
       },
     ],
   });
@@ -397,7 +435,6 @@ export async function ensureApiKeyFromOptionEnvOrPrompt(params: {
   setCredential: (apiKey: SecretInput, mode?: SecretInputMode) => Promise<void>;
   noteMessage?: string;
   noteTitle?: string;
-  i18n: I18nContext;
 }): Promise<string> {
   const optionApiKey = await maybeApplyApiKeyFromOption({
     token: params.token,
@@ -425,7 +462,6 @@ export async function ensureApiKeyFromOptionEnvOrPrompt(params: {
     prompter: params.prompter,
     secretInputMode: params.secretInputMode,
     setCredential: params.setCredential,
-    i18n: params.i18n,
   });
 }
 
@@ -439,12 +475,10 @@ export async function ensureApiKeyFromEnvOrPrompt(params: {
   prompter: WizardPrompter;
   secretInputMode?: SecretInputMode;
   setCredential: (apiKey: SecretInput, mode?: SecretInputMode) => Promise<void>;
-  i18n: I18nContext;
 }): Promise<string> {
   const selectedMode = await resolveSecretInputModeForEnvSelection({
     prompter: params.prompter,
     explicitMode: params.secretInputMode,
-    i18n: params.i18n,
   });
   const envKey = resolveEnvApiKey(params.provider);
 
@@ -454,29 +488,23 @@ export async function ensureApiKeyFromEnvOrPrompt(params: {
         config: params.config,
         provider: params.provider,
         preferredEnvVar: envKey?.source ? extractEnvVarFromSourceLabel(envKey.source) : undefined,
-        i18n: params.i18n,
       });
       await params.setCredential(fallback.ref, selectedMode);
       return fallback.resolvedValue;
     }
-    const resolved = await resolveApiKeyRefForOnboarding({
+    const resolved = await promptSecretRefForOnboarding({
       provider: params.provider,
       config: params.config,
       prompter: params.prompter,
       preferredEnvVar: envKey?.source ? extractEnvVarFromSourceLabel(envKey.source) : undefined,
-      i18n: params.i18n,
     });
     await params.setCredential(resolved.ref, selectedMode);
     return resolved.resolvedValue;
   }
 
   if (envKey && selectedMode === "plaintext") {
-    const t = params.i18n.t.authChoice.apiKeyPrompt;
     const useExisting = await params.prompter.confirm({
-      message: t.useExisting
-        .replace("{envLabel}", params.envLabel)
-        .replace("{source}", envKey.source)
-        .replace("{preview}", formatApiKeyPreview(envKey.apiKey)),
+      message: `使用现有的 ${params.envLabel}(${envKey.source}, ${formatApiKeyPreview(envKey.apiKey)})?`,
       initialValue: true,
     });
     if (useExisting) {

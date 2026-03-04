@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resolveAgentModelPrimaryValue } from "../config/model-input.js";
-import { createI18nContext } from "../wizard/i18n/index.js";
 import type { WizardPrompter } from "../wizard/prompts.js";
 import { applyAuthChoiceHuggingface } from "./auth-choice.apply.huggingface.js";
 import {
@@ -28,6 +27,19 @@ function createHuggingfacePrompter(params: {
     overrides.note = params.note;
   }
   return createWizardPrompter(overrides, { defaultSelect: "" });
+}
+
+type ApplyHuggingfaceParams = Parameters<typeof applyAuthChoiceHuggingface>[0];
+
+async function runHuggingfaceApply(
+  params: Omit<ApplyHuggingfaceParams, "authChoice" | "setDefaultModel"> &
+    Partial<Pick<ApplyHuggingfaceParams, "setDefaultModel">>,
+) {
+  return await applyAuthChoiceHuggingface({
+    authChoice: "huggingface-api-key",
+    setDefaultModel: params.setDefaultModel ?? true,
+    ...params,
+  });
 }
 
 describe("applyAuthChoiceHuggingface", () => {
@@ -62,7 +74,7 @@ describe("applyAuthChoiceHuggingface", () => {
       prompter: {} as WizardPrompter,
       runtime: createExitThrowingRuntime(),
       setDefaultModel: false,
-      i18n: createI18nContext("en"),
+      i18n: createI18nContext(),
     });
     expect(result).toBeNull();
   });
@@ -77,13 +89,10 @@ describe("applyAuthChoiceHuggingface", () => {
     const prompter = createHuggingfacePrompter({ text, select });
     const runtime = createExitThrowingRuntime();
 
-    const result = await applyAuthChoiceHuggingface({
-      authChoice: "huggingface-api-key",
+    const result = await runHuggingfaceApply({
       config: {},
       prompter,
       runtime,
-      setDefaultModel: true,
-      i18n: createI18nContext("en"),
     });
 
     expect(result).not.toBeNull();
@@ -135,13 +144,10 @@ describe("applyAuthChoiceHuggingface", () => {
     const prompter = createHuggingfacePrompter({ text, select, confirm });
     const runtime = createExitThrowingRuntime();
 
-    const result = await applyAuthChoiceHuggingface({
-      authChoice: "huggingface-api-key",
+    const result = await runHuggingfaceApply({
       config: {},
       prompter,
       runtime,
-      setDefaultModel: true,
-      i18n: createI18nContext("en"),
       opts: {
         tokenProvider,
         token,
@@ -171,13 +177,12 @@ describe("applyAuthChoiceHuggingface", () => {
     const prompter = createHuggingfacePrompter({ text, select, note });
     const runtime = createExitThrowingRuntime();
 
-    const result = await applyAuthChoiceHuggingface({
-      authChoice: "huggingface-api-key",
+    const result = await runHuggingfaceApply({
       config: {},
       prompter,
       runtime,
       setDefaultModel: true,
-      i18n: createI18nContext("en"),
+      i18n: createI18nContext(),
     });
 
     expect(result).not.toBeNull();

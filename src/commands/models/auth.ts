@@ -379,7 +379,7 @@ export async function modelsAuthLoginCommand(opts: LoginOptions, runtime: Runtim
   if (result.defaultModel) {
     runtime.log(
       opts.setDefault
-        ? `Default model set to ${result.defaultModel}`
+        ? `设置默认模型 ${result.defaultModel}`
         : `Default model available: ${result.defaultModel} (use --set-default to apply)`,
     );
   }

@@ -1,9 +1,9 @@
 import { installSkill } from "../agents/skills-install.js";
 import { buildWorkspaceSkillStatus } from "../agents/skills-status.js";
+import { formatCliCommand } from "../cli/command-format.js";
 import type { OpenClawConfig } from "../config/config.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { normalizeSecretInput } from "../utils/normalize-secret-input.js";
-import { createI18nContext, type I18nContext } from "../wizard/i18n/index.js";
 import type { WizardPrompter } from "../wizard/prompts.js";
 import { detectBinary, resolveNodeManagerOptions } from "./onboard-helpers.js";
 
@@ -24,7 +24,7 @@ function formatSkillHint(skill: {
   const installLabel = skill.install[0]?.label?.trim();
   const combined = desc && installLabel ? `${desc} — ${installLabel}` : desc || installLabel;
   if (!combined) {
-    return "install";
+    return "安装";
   }
   const maxLen = 90;
   return combined.length > maxLen ? `${combined.slice(0, maxLen - 1)}…` : combined;
@@ -52,11 +52,7 @@ export async function setupSkills(
   workspaceDir: string,
   runtime: RuntimeEnv,
   prompter: WizardPrompter,
-  i18n?: I18nContext,
 ): Promise<OpenClawConfig> {
-  // Get i18n context, defaulting to English if not provided
-  const t = i18n?.t.skills ?? createI18nContext("en").t.skills;
-
   const report = buildWorkspaceSkillStatus(workspaceDir, { config: cfg });
   const eligible = report.skills.filter((s) => s.eligible);
   const unsupportedOs = report.skills.filter(
@@ -69,16 +65,16 @@ export async function setupSkills(
 
   await prompter.note(
     [
-      `${t.status.eligible}: ${eligible.length}`,
-      `${t.status.missingRequirements}: ${missing.length}`,
-      `${t.status.unsupportedOs}: ${unsupportedOs.length}`,
-      `${t.status.blockedByAllowlist}: ${blocked.length}`,
+      `符合条件：${eligible.length}`,
+      `缺少依赖：${missing.length}`,
+      `此操作系统不支持：${unsupportedOs.length}`,
+      `被允许列表阻止：${blocked.length}`,
     ].join("\n"),
-    t.status.title,
+    "技能状态",
   );
 
   const shouldConfigure = await prompter.confirm({
-    message: t.configureNow,
+    message: "现在配置技能？（推荐）",
     initialValue: true,
   });
   if (!shouldConfigure) {
@@ -91,12 +87,12 @@ export async function setupSkills(
   let next: OpenClawConfig = cfg;
   if (installable.length > 0) {
     const toInstall = await prompter.multiselect({
-      message: t.installDependencies,
+      message: "安装缺失的技能依赖",
       options: [
         {
           value: "__skip__",
-          label: t.skipForNow,
-          hint: t.skipHint,
+          label: "暂时跳过",
+          hint: "继续而不安装依赖",
         },
         ...installable.map((skill) => ({
           value: skill.name,
@@ -118,18 +114,24 @@ export async function setupSkills(
       !(await detectBinary("brew"));
 
     if (needsBrewPrompt) {
-      await prompter.note(t.brew.message.join("\n"), t.brew.title);
+      await prompter.note(
+        [
+          "许多技能依赖通过 Homebrew 提供。",
+          "如果没有 brew，您需要从源代码构建或手动下载发行版。",
+        ].join("\n"),
+        "推荐使用 Homebrew",
+      );
       const showBrewInstall = await prompter.confirm({
-        message: t.brew.showCommand,
+        message: "显示 Homebrew 安装命令？",
         initialValue: true,
       });
       if (showBrewInstall) {
         await prompter.note(
           [
-            t.brew.run,
+            "运行：",
             '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"',
           ].join("\n"),
-          t.brew.installTitle,
+          "Homebrew 安装",
         );
       }
     }
@@ -139,7 +141,7 @@ export async function setupSkills(
     );
     if (needsNodeManagerPrompt) {
       const nodeManager = (await prompter.select({
-        message: t.nodeManager.message,
+        message: "技能安装首选的 node 管理器",
         options: resolveNodeManagerOptions(),
       })) as "npm" | "pnpm" | "bun";
       next = {
@@ -163,7 +165,7 @@ export async function setupSkills(
       if (!installId) {
         continue;
       }
-      const spin = prompter.progress(`${t.installing} ${name}…`);
+      const spin = prompter.progress(`正在安装 ${name}…`);
       const result = await installSkill({
         workspaceDir,
         skillName: target.name,
@@ -172,19 +174,15 @@ export async function setupSkills(
       });
       const warnings = result.warnings ?? [];
       if (result.ok) {
-        spin.stop(
-          warnings.length > 0
-            ? `${t.installed} ${name} (${t.installedWithWarnings})`
-            : `${t.installed} ${name}`,
-        );
+        spin.stop(warnings.length > 0 ? `已安装 ${name}（有警告）` : `已安装 ${name}`);
         for (const warning of warnings) {
           runtime.log(warning);
         }
         continue;
       }
-      const code = result.code == null ? "" : ` (exit ${result.code})`;
+      const code = result.code == null ? "" : ` (退出代码 ${result.code})`;
       const detail = summarizeInstallFailure(result.message);
-      spin.stop(`${t.installFailed}: ${name}${code}${detail ? ` — ${detail}` : ""}`);
+      spin.stop(`安装失败：${name}${code}${detail ? ` — ${detail}` : ""}`);
       for (const warning of warnings) {
         runtime.log(warning);
       }
@@ -193,8 +191,8 @@ export async function setupSkills(
       } else if (result.stdout) {
         runtime.log(result.stdout.trim());
       }
-      runtime.log(t.tip);
-      runtime.log(t.docs);
+      runtime.log(`提示：运行 \`${formatCliCommand("openclaw doctor")}\` 以查看技能和依赖要求。`);
+      runtime.log("文档：https://docs.openclaw.ai/skills");
     }
   }
 
@@ -203,7 +201,7 @@ export async function setupSkills(
       continue;
     }
     const wantsKey = await prompter.confirm({
-      message: t.setApiKey.replace("{env}", skill.primaryEnv).replace("{skill}", skill.name),
+      message: `为 ${skill.name} 设置 ${skill.primaryEnv}？`,
       initialValue: false,
     });
     if (!wantsKey) {
@@ -211,8 +209,8 @@ export async function setupSkills(
     }
     const apiKey = String(
       await prompter.text({
-        message: t.enterApiKey.replace("{env}", skill.primaryEnv),
-        validate: (value) => (value?.trim() ? undefined : t.required),
+        message: `输入 ${skill.primaryEnv}`,
+        validate: (value) => (value?.trim() ? undefined : "必填项"),
       }),
     );
     next = upsertSkillEntry(next, skill.skillKey, { apiKey: normalizeSecretInput(apiKey) });

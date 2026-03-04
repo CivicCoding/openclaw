@@ -11,7 +11,6 @@ import {
 } from "../agents/model-selection.js";
 import type { OpenClawConfig } from "../config/config.js";
 import { resolveAgentModelPrimaryValue } from "../config/model-input.js";
-import { t, type I18nContext } from "../wizard/i18n/index.js";
 import type { WizardPrompter, WizardSelectOption } from "../wizard/prompts.js";
 import { formatTokenK } from "./models/shared.js";
 import { OPENAI_CODEX_DEFAULT_MODEL } from "./openai-codex-model-default.js";
@@ -37,7 +36,6 @@ type PromptDefaultModelParams = {
   preferredProvider?: string;
   agentDir?: string;
   message?: string;
-  i18n?: I18nContext;
 };
 
 type PromptDefaultModelResult = { model?: string; config?: OpenClawConfig };
@@ -116,7 +114,6 @@ function addModelSelectOption(params: {
   seen: Set<string>;
   aliasIndex: ReturnType<typeof buildModelAliasIndex>;
   hasAuth: (provider: string) => boolean;
-  i18n?: I18nContext;
 }) {
   const key = modelKey(params.entry.provider, params.entry.id);
   if (params.seen.has(key)) {
@@ -131,20 +128,17 @@ function addModelSelectOption(params: {
     hints.push(params.entry.name);
   }
   if (params.entry.contextWindow) {
-    const ctxText = t(params.i18n, "modelPicker.ctxWindow", {
-      size: formatTokenK(params.entry.contextWindow),
-    });
-    hints.push(ctxText);
+    hints.push(`上下文 ${formatTokenK(params.entry.contextWindow)}`);
   }
   if (params.entry.reasoning) {
-    hints.push(t(params.i18n, "modelPicker.reasoning"));
+    hints.push("推理");
   }
   const aliases = params.aliasIndex.byKey.get(key);
   if (aliases?.length) {
-    hints.push(t(params.i18n, "modelPicker.alias", { aliases: aliases.join(", ") }));
+    hints.push(`别名：${aliases.join("，")}`);
   }
   if (!params.hasAuth(params.entry.provider)) {
-    hints.push(t(params.i18n, "modelPicker.authMissing"));
+    hints.push("缺少认证");
   }
   params.options.push({
     value: key,
@@ -166,18 +160,12 @@ async function promptManualModel(params: {
   prompter: WizardPrompter;
   allowBlank: boolean;
   initialValue?: string;
-  i18n?: I18nContext;
 }): Promise<PromptDefaultModelResult> {
-  const message = params.allowBlank
-    ? t(params.i18n, "modelPicker.defaultModelKeep")
-    : t(params.i18n, "modelPicker.defaultModel");
   const modelInput = await params.prompter.text({
-    message,
+    message: params.allowBlank ? "默认模型（留空保持当前值）" : "默认模型",
     initialValue: params.initialValue,
-    placeholder: t(params.i18n, "modelPicker.providerPlaceholder"),
-    validate: params.allowBlank
-      ? undefined
-      : (value) => (value?.trim() ? undefined : t(params.i18n, "modelPicker.required")),
+    placeholder: "供应商/模型",
+    validate: params.allowBlank ? undefined : (value) => (value?.trim() ? undefined : "必填"),
   });
   const model = String(modelInput ?? "").trim();
   if (!model) {
@@ -199,7 +187,6 @@ export async function promptDefaultModel(
     ? normalizeProviderId(preferredProviderRaw)
     : undefined;
   const configuredRaw = resolveConfiguredModelRaw(cfg);
-  const i18n = params.i18n;
 
   const resolved = resolveConfiguredModelRef({
     cfg,
@@ -215,7 +202,6 @@ export async function promptDefaultModel(
       prompter: params.prompter,
       allowBlank: allowKeep,
       initialValue: configuredRaw || resolvedKey || undefined,
-      i18n,
     });
   }
 
@@ -238,7 +224,6 @@ export async function promptDefaultModel(
       prompter: params.prompter,
       allowBlank: allowKeep,
       initialValue: configuredRaw || resolvedKey || undefined,
-      i18n,
     });
   }
 
@@ -254,19 +239,15 @@ export async function promptDefaultModel(
     !hasPreferredProvider && providers.length > 1 && models.length > PROVIDER_FILTER_THRESHOLD;
   if (shouldPromptProvider) {
     const selection = await params.prompter.select({
-      message: t(i18n, "modelPicker.filterByProvider"),
+      message: "使用供应商过滤模型",
       options: [
-        { value: "*", label: t(i18n, "modelPicker.allProviders") },
+        { value: "*", label: "所有供应商" },
         ...providers.map((provider) => {
           const count = models.filter((entry) => entry.provider === provider).length;
-          const countText =
-            count === 1
-              ? t(i18n, "modelPicker.modelCount", { count: String(count) })
-              : t(i18n, "modelPicker.modelCountPlural", { count: String(count) });
           return {
             value: provider,
             label: provider == "shengsuanyun" ? "胜算云" : provider,
-            hint: countText,
+            hint: `${count} 个模型`,
           };
         }),
       ],
@@ -296,41 +277,34 @@ export async function promptDefaultModel(
 
   const options: WizardSelectOption[] = [];
   if (allowKeep) {
-    const keepLabel = configuredRaw
-      ? t(i18n, "modelPicker.keepCurrent", { model: configuredRaw })
-      : t(i18n, "modelPicker.keepCurrentDefault", { model: resolvedKey });
-    const keepHint =
-      configuredRaw && configuredRaw !== resolvedKey
-        ? t(i18n, "modelPicker.resolvesTo", { model: resolvedKey })
-        : undefined;
     options.push({
       value: KEEP_VALUE,
-      label: keepLabel,
-      hint: keepHint,
+      label: configuredRaw ? `保持当前值 (${configuredRaw})` : `保持当前值（默认：${resolvedKey}）`,
+      hint: configuredRaw && configuredRaw !== resolvedKey ? `解析为 ${resolvedKey}` : undefined,
     });
   }
   if (includeManual) {
-    options.push({ value: MANUAL_VALUE, label: t(i18n, "modelPicker.enterModelManually") });
+    options.push({ value: MANUAL_VALUE, label: "手动输入模型" });
   }
   if (includeVllm && agentDir) {
     options.push({
       value: VLLM_VALUE,
-      label: t(i18n, "modelPicker.vllmCustom"),
-      hint: t(i18n, "modelPicker.vllmHint"),
+      label: "vLLM（自定义）",
+      hint: "输入 vLLM URL + API 密钥 + 模型",
     });
   }
 
   const seen = new Set<string>();
 
   for (const entry of models) {
-    addModelSelectOption({ entry, options, seen, aliasIndex, hasAuth, i18n });
+    addModelSelectOption({ entry, options, seen, aliasIndex, hasAuth });
   }
 
   if (configuredKey && !seen.has(configuredKey)) {
     options.push({
       value: configuredKey,
       label: configuredKey,
-      hint: t(i18n, "modelPicker.currentNotInCatalog"),
+      hint: "当前值（不在目录中）",
     });
   }
 
@@ -348,7 +322,7 @@ export async function promptDefaultModel(
   }
 
   const selection = await params.prompter.select({
-    message: params.message ?? t(i18n, "modelPicker.defaultModel"),
+    message: params.message ?? "默认模型",
     options,
     initialValue,
   });
@@ -361,15 +335,11 @@ export async function promptDefaultModel(
       prompter: params.prompter,
       allowBlank: false,
       initialValue: configuredRaw || resolvedKey || undefined,
-      i18n,
     });
   }
   if (selection === VLLM_VALUE) {
     if (!agentDir) {
-      await params.prompter.note(
-        t(i18n, "modelPicker.vllmNotAvailable"),
-        t(i18n, "modelPicker.vllmNotAvailableTitle"),
-      );
+      await params.prompter.note("vLLM 设置需要代理目录上下文。", "vLLM 不可用");
       return {};
     }
     const { config: nextConfig, modelRef } = await promptAndConfigureVllm({
@@ -390,7 +360,6 @@ export async function promptModelAllowlist(params: {
   agentDir?: string;
   allowedKeys?: string[];
   initialSelections?: string[];
-  i18n?: I18nContext;
 }): Promise<PromptModelAllowlistResult> {
   const cfg = params.config;
   const existingKeys = resolveConfiguredModelKeys(cfg);
@@ -410,12 +379,11 @@ export async function promptModelAllowlist(params: {
   const initialKeys = allowedKeySet
     ? initialSeeds.filter((key) => allowedKeySet.has(key))
     : initialSeeds;
-  const i18n = params.i18n;
 
   const catalog = await loadModelCatalog({ config: cfg, useCache: false });
   if (catalog.length === 0 && allowedKeys.length === 0) {
     const raw = await params.prompter.text({
-      message: params.message ?? t(i18n, "modelPicker.modelAllowlist"),
+      message: params.message ?? "白名单模型（逗号分隔的 供应商/模型；留空保持当前值）",
       initialValue: existingKeys.join(", "),
       placeholder: `${OPENAI_CODEX_DEFAULT_MODEL}, anthropic/claude-opus-4-6`,
     });
@@ -443,7 +411,7 @@ export async function promptModelAllowlist(params: {
     : catalog;
 
   for (const entry of filteredCatalog) {
-    addModelSelectOption({ entry, options, seen, aliasIndex, hasAuth, i18n });
+    addModelSelectOption({ entry, options, seen, aliasIndex, hasAuth });
   }
 
   const supplementalKeys = allowedKeySet ? allowedKeys : existingKeys;
@@ -451,13 +419,10 @@ export async function promptModelAllowlist(params: {
     if (seen.has(key)) {
       continue;
     }
-    const hintKey = allowedKeySet
-      ? "modelPicker.allowedNotInCatalog"
-      : "modelPicker.configuredNotInCatalog";
     options.push({
       value: key,
       label: key,
-      hint: t(i18n, hintKey),
+      hint: allowedKeySet ? "已允许（不在目录中）" : "已配置（不在目录中）",
     });
     seen.add(key);
   }
@@ -467,7 +432,7 @@ export async function promptModelAllowlist(params: {
   }
 
   const selection = await params.prompter.multiselect({
-    message: params.message ?? t(i18n, "modelPicker.modelAllowlistMultiselect"),
+    message: params.message ?? "/model picker 中的模型（多选）",
     options,
     initialValues: initialKeys.length > 0 ? initialKeys : undefined,
     searchable: true,
@@ -480,7 +445,7 @@ export async function promptModelAllowlist(params: {
     return { models: [] };
   }
   const confirmClear = await params.prompter.confirm({
-    message: t(i18n, "modelPicker.clearAllowlistConfirm"),
+    message: "清除模型白名单？（显示所有模型）",
     initialValue: false,
   });
   if (!confirmClear) {
