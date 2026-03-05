@@ -74,7 +74,6 @@ export function applyToolPolicyPipeline(params: {
       .map((tool) => normalizeToolName(tool.name))
       .filter(Boolean),
   );
-
   const pluginGroups = buildPluginToolGroups({
     tools: params.tools,
     toolMeta: params.toolMeta,

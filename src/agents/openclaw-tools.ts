@@ -216,6 +216,5 @@ export function createOpenClawTools(options?: {
     existingToolNames: new Set(tools.map((tool) => tool.name)),
     toolAllowlist: options?.pluginToolAllowlist,
   });
-
   return [...tools, ...pluginTools];
 }

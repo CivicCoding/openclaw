@@ -423,12 +423,6 @@ export async function startGatewayServer(
 
   initSubagentRegistry();
 
-  try {
-    await preloadShengSuanYunTools({ config: cfgAtStart });
-  } catch (err) {
-    log.error(`gateway: error ShengSuanYun tools preload: ${String(err)}`);
-  }
-
   const defaultAgentId = resolveDefaultAgentId(cfgAtStart);
   const defaultWorkspaceDir = resolveAgentWorkspaceDir(cfgAtStart, defaultAgentId);
   const baseMethods = listGatewayMethods();
@@ -477,7 +471,11 @@ export async function startGatewayServer(
   } = runtimeConfig;
   let hooksConfig = runtimeConfig.hooksConfig;
   const canvasHostEnabled = runtimeConfig.canvasHostEnabled;
-
+  try {
+    await preloadShengSuanYunTools({ config: cfgAtStart, workspaceDir: defaultWorkspaceDir });
+  } catch (err) {
+    log.error(`gateway: error ShengSuanYun tools preload: ${String(err)}`);
+  }
   // Create auth rate limiters used by connect/auth flows.
   const rateLimitConfig = cfgAtStart.gateway?.auth?.rateLimit;
   const { rateLimiter: authRateLimiter, browserRateLimiter: browserAuthRateLimiter } =

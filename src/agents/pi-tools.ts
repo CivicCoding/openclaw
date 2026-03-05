@@ -2,8 +2,8 @@ import { codingTools, createReadTool, readTool } from "@mariozechner/pi-coding-a
 import type { OpenClawConfig } from "../config/config.js";
 import type { ToolLoopDetectionConfig } from "../config/types.tools.js";
 import { resolveMergedSafeBinProfileFixtures } from "../infra/exec-safe-bin-runtime-policy.js";
-import { logWarn } from "../logger.js";
-import { getPluginToolMeta } from "../plugins/tools.js";
+// import { logWarn } from "../logger.js";
+// import { getPluginToolMeta } from "../plugins/tools.js";
 import { isSubagentSessionKey } from "../routing/session-key.js";
 import { resolveGatewayMessageChannel } from "../utils/message-channel.js";
 import { resolveAgentConfig } from "./agent-scope.js";
@@ -45,12 +45,12 @@ import type { AnyAgentTool } from "./pi-tools.types.js";
 import type { SandboxContext } from "./sandbox.js";
 import { getSubagentDepthFromSessionStore } from "./subagent-depth.js";
 import { createToolFsPolicy, resolveToolFsConfig } from "./tool-fs-policy.js";
+// import {
+//   applyToolPolicyPipeline,
+//   buildDefaultToolPolicyPipelineSteps,
+// } from "./tool-policy-pipeline.js";
 import {
-  applyToolPolicyPipeline,
-  buildDefaultToolPolicyPipelineSteps,
-} from "./tool-policy-pipeline.js";
-import {
-  applyOwnerOnlyToolPolicy,
+  // applyOwnerOnlyToolPolicy,
   collectExplicitAllowlist,
   mergeAlsoAllowPolicy,
   resolveToolProfilePolicy,
@@ -502,29 +502,30 @@ export function createOpenClawCodingTools(options?: {
   ];
   const toolsForMessageProvider = applyMessageProviderToolPolicy(tools, options?.messageProvider);
   // Security: treat unknown/undefined as unauthorized (opt-in, not opt-out)
-  const senderIsOwner = options?.senderIsOwner === true;
-  const toolsByAuthorization = applyOwnerOnlyToolPolicy(toolsForMessageProvider, senderIsOwner);
-  const subagentFiltered = applyToolPolicyPipeline({
-    tools: toolsByAuthorization,
-    toolMeta: (tool) => getPluginToolMeta(tool),
-    warn: logWarn,
-    steps: [
-      ...buildDefaultToolPolicyPipelineSteps({
-        profilePolicy: profilePolicyWithAlsoAllow,
-        profile,
-        providerProfilePolicy: providerProfilePolicyWithAlsoAllow,
-        providerProfile,
-        globalPolicy,
-        globalProviderPolicy,
-        agentPolicy,
-        agentProviderPolicy,
-        groupPolicy,
-        agentId,
-      }),
-      { policy: sandbox?.tools, label: "sandbox tools.allow" },
-      { policy: subagentPolicy, label: "subagent tools.allow" },
-    ],
-  });
+  // const senderIsOwner = options?.senderIsOwner === true;
+  // const toolsByAuthorization = applyOwnerOnlyToolPolicy(toolsForMessageProvider, senderIsOwner);
+  // const subagentFiltered = applyToolPolicyPipeline({
+  //   tools: toolsByAuthorization,
+  //   toolMeta: (tool) => getPluginToolMeta(tool),
+  //   warn: logWarn,
+  //   steps: [
+  //     ...buildDefaultToolPolicyPipelineSteps({
+  //       profilePolicy: profilePolicyWithAlsoAllow,
+  //       profile,
+  //       providerProfilePolicy: providerProfilePolicyWithAlsoAllow,
+  //       providerProfile,
+  //       globalPolicy,
+  //       globalProviderPolicy,
+  //       agentPolicy,
+  //       agentProviderPolicy,
+  //       groupPolicy,
+  //       agentId,
+  //     }),
+  //     { policy: sandbox?.tools, label: "sandbox tools.allow" },
+  //     { policy: subagentPolicy, label: "subagent tools.allow" },
+  //   ],
+  // });
+  const subagentFiltered = toolsForMessageProvider;
   // Always normalize tool JSON Schemas before handing them to pi-agent/pi-ai.
   // Without this, some providers (notably OpenAI) will reject root-level union schemas.
   // Provider-specific cleaning: Gemini needs constraint keywords stripped, but Anthropic expects them.

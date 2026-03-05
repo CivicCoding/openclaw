@@ -1,4 +1,8 @@
+import fs from "node:fs";
+import path from "node:path";
+import { resolveStateDir } from "../config/paths.js";
 import type { ModelApi, ModelDefinitionConfig } from "../config/types.js";
+
 export const SHENGSUANYUN_BASE_URL = "https://router.shengsuanyun.com/api/v1";
 export const SHENGSUANYUN_MODALITIES_BASE_URL = "https://api.shengsuanyun.com/modelrouter";
 
@@ -346,9 +350,64 @@ export async function getShengSuanYunModels(): Promise<ModelDefinitionConfig[]> 
   }
 }
 
+function getModalitiesCachePath(): string {
+  const stateDir = resolveStateDir();
+  const agentDir = path.join(stateDir, "agents");
+  return path.join(agentDir, "modalities.json");
+}
+interface ModalitiesCache {
+  timestamp: number;
+  models: MModel[];
+}
+
+// Cache TTL: 5 days
+const CACHE_TTL_MS = 5 * 24 * 60 * 60 * 1000;
+async function loadCachedModalities(): Promise<MModel[] | null> {
+  try {
+    const cachePath = getModalitiesCachePath();
+    if (!fs.existsSync(cachePath)) {
+      return null;
+    }
+    const cacheData = fs.readFileSync(cachePath, "utf-8");
+    const cache = JSON.parse(cacheData) as ModalitiesCache;
+    if (Date.now() - cache.timestamp < CACHE_TTL_MS) {
+      console.log(`[shengsuanyun-models] Loaded ${cache.models.length} modality models from cache`);
+      return cache.models;
+    }
+    console.log(`[shengsuanyun-models] Cache expired, will fetch fresh data`);
+    return null;
+  } catch (err) {
+    console.log(`[shengsuanyun-models] Failed to load cache:`, err);
+    return null;
+  }
+}
+
+async function saveCachedModalities(models: MModel[]): Promise<void> {
+  try {
+    const cachePath = getModalitiesCachePath();
+    const cacheDir = path.dirname(cachePath);
+    // Ensure directory exists
+    if (!fs.existsSync(cacheDir)) {
+      fs.mkdirSync(cacheDir, { recursive: true });
+    }
+    const cache: ModalitiesCache = {
+      timestamp: Date.now(),
+      models,
+    };
+    fs.writeFileSync(cachePath, JSON.stringify(cache, null, 2), "utf-8");
+    console.log(`[shengsuanyun-models] Cached ${models.length} modality models to ${cachePath}`);
+  } catch (err) {
+    console.error(`[shengsuanyun-models] Failed to save cache:`, err);
+  }
+}
+
 export async function getShengSuanYunModalityModels(): Promise<MModel[]> {
   if (process.env.NODE_ENV === "test" || process.env.VITEST) {
     return [];
+  }
+  const cached = await loadCachedModalities();
+  if (cached !== null) {
+    return cached;
   }
   try {
     const res = await fetch(
@@ -406,6 +465,9 @@ export async function getShengSuanYunModalityModels(): Promise<MModel[]> {
     }
 
     console.log(`[shengsuanyun-models] Loaded ${results.length} modality models total`);
+    if (results.length > 0) {
+      await saveCachedModalities(results);
+    }
     return results;
   } catch (err) {
     console.error("[shengsuanyun-models] Error fetching modality models:", err);

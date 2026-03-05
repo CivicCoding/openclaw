@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { resolveAgentDir } from "../agents/agent-scope.js";
 import { createOpenClawTools } from "../agents/openclaw-tools.js";
 import {
   resolveEffectiveToolPolicy,
@@ -245,6 +246,9 @@ export async function handleToolsInvokeHttpRequest(
     ? resolveSubagentToolPolicy(cfg)
     : undefined;
 
+  // Resolve agentDir for tools that need agent-specific state
+  const agentDir = agentId ? resolveAgentDir(cfg, agentId) : undefined;
+
   // Build tool list (core + plugin tools).
   const allTools = createOpenClawTools({
     agentSessionKey: sessionKey,
@@ -252,6 +256,7 @@ export async function handleToolsInvokeHttpRequest(
     agentAccountId: accountId,
     agentTo,
     agentThreadId,
+    agentDir,
     config: cfg,
     pluginToolAllowlist: collectExplicitAllowlist([
       profilePolicy,

@@ -1,3 +1,4 @@
+import { ImageContent, TextContent } from "@mariozechner/pi-ai";
 import { Type, type TSchema } from "@sinclair/typebox";
 import type { OpenClawConfig } from "../../../config/config.ts";
 import { loadConfig } from "../../../config/config.ts";
@@ -7,6 +8,7 @@ import {
   SHENGSUANYUN_BASE_URL,
   TaskRes,
 } from "../../shengsuanyun-models.ts";
+import { sanitizeToolResultImages } from "../../tool-images.ts";
 import type { AnyAgentTool } from "../common.ts";
 import { readStringParam, readStringArrayParam, readNumberParam } from "../common.ts";
 import { createGemini3ProImageTool } from "./gemini3pro-image-preview.ts";
@@ -21,7 +23,7 @@ export const APP_HEADERS: Record<string, string> = {
 
 async function generate(
   params: Record<string, unknown>,
-): Promise<{ success: boolean; Urls?: string[]; error?: string }> {
+): Promise<{ success: boolean; type?: string; Urls?: string[]; error?: string }> {
   try {
     const { apiKey, ...rest } = params;
     const res = await fetch(`${SHENGSUANYUN_BASE_URL}/tasks/generations`, {
@@ -70,12 +72,13 @@ async function generate(
         }
         const currentProgress = img_urls.data?.data?.progress || 0;
         if (currentProgress >= 100 || img_urls.data?.status === "SUCCEEDED") {
+          const data = img_urls.data?.data || {};
+          const mediaKeys = ["image_urls", "video_urls", "audio_urls"] as const;
+          const foundKey = mediaKeys.find((key) => data[key]);
           return {
             success: true,
-            Urls:
-              img_urls.data?.data?.image_urls ||
-              img_urls.data?.data?.video_urls ||
-              img_urls.data?.data?.audio_urls,
+            type: foundKey,
+            Urls: data.image_urls || data.video_urls || data.audio_urls,
           };
         }
         let waitTime = 10000;
@@ -106,7 +109,7 @@ async function generate(
 }
 
 function sanitizeToolName(name: string): string {
-  return name.replace(/[^a-zA-Z0-9_-]/g, "_").replace(/_+/g, "_");
+  return name.replace(/[^a-zA-Z0-9_]/g, "_").replace(/_+/g, "_");
 }
 
 async function loadShengSuanYunTools(opts?: {
@@ -115,21 +118,12 @@ async function loadShengSuanYunTools(opts?: {
 }): Promise<AnyAgentTool[]> {
   const models = await getShengSuanYunModalityModels();
   const tools: AnyAgentTool[] = [];
-  const seenNames = new Set<string>();
   for (const model of models) {
     const label = `${model.company_name} ${model.model_name} Generate tool`;
-    const baseName = sanitizeToolName(`${model.company_name}_${model.model_name}`);
-
-    // Ensure unique tool names by appending a counter if needed
-    let name = baseName;
-    let counter = 1;
-    while (seenNames.has(name)) {
-      name = `${baseName}_${counter}`;
-      counter++;
-    }
-    seenNames.add(name);
-
-    const description = `Generate content using the ${model.company_name} ${model.model_name} model. ${model.desc}`;
+    const name = sanitizeToolName(model.api_name);
+    const description =
+      model.desc +
+      "\n\n 注意： 生成成功后我将把它下载保存到工作文件夹的 media_save 目录中。需要向用户返回这个文件链接。";
     let inputSchema: JsonSchema = {};
     try {
       inputSchema = JSON.parse(model.input_schema) as JsonSchema;
@@ -137,17 +131,25 @@ async function loadShengSuanYunTools(opts?: {
       console.log(`[shengsuanyun-generate] Parse input_schema error for ${model.model_name}:`, e);
       continue;
     }
-    const parameters = generateTypebox(inputSchema);
+    let parameters: TSchema;
+    try {
+      parameters = generateTypebox(inputSchema);
+    } catch (e) {
+      console.error(`[shengsuanyun-generate] generateTypebox error for ${model.model_name}:`, e);
+      continue;
+    }
     tools.push({
       label,
       name,
       description,
-      parameters,
+      parameters: parameters,
       execute: async (_toolCallId, args) => {
         const cfg = opts?.config ?? loadConfig();
         const resolved = await resolveApiKeyForProvider({ provider: "shengsuanyun", cfg });
         if (!resolved.apiKey) {
-          throw new Error("胜算云 API key 未配置。");
+          throw new Error(
+            "胜算云 API key 未配置。媒体生成工具需要先配置 API Key, https://console.shengsuanyun.com/user/keys",
+          );
         }
         const params = args as Record<string, unknown>;
         const apiParams: Record<string, unknown> = { model: model.api_name };
@@ -187,37 +189,26 @@ async function loadShengSuanYunTools(opts?: {
 
         const result = await generate({ ...apiParams, apiKey: resolved.apiKey });
         if (result.success && result.Urls) {
-          const lines: string[] = [];
-          const localPaths: string[] = [];
-
+          let content: (TextContent | ImageContent)[] = [];
           if (opts?.workspaceDir) {
             for (const url of result.Urls) {
               try {
-                const localPath = await saveMediaToWorkspace(
+                const ctt = await saveMediaToWorkspace(
                   url,
                   opts.workspaceDir,
-                  model.model_name.replace(/[^a-zA-Z0-9]/g, "_"),
+                  sanitizeToolName(model.api_name),
                 );
-                localPaths.push(localPath);
-                lines.push(`MEDIA:${localPath}`);
+                content.push(ctt);
               } catch (err) {
+                content.push({ type: "text", text: url });
                 console.log("saveMediaToWorkspace() function error:", err);
-                lines.push(`MEDIA:${url}`);
               }
             }
           } else {
-            for (const url of result.Urls) {
-              lines.push(`MEDIA:${url}`);
-            }
+            content = result.Urls.map((it) => ({ type: "text", text: it }));
           }
-
-          return {
-            content: [{ type: "text", text: lines.join("\n") }],
-            details: {
-              Url: opts?.workspaceDir && localPaths.length > 0 ? localPaths : result.Urls,
-              provider: "shengsuanyun",
-            },
-          };
+          const details = { Url: result.Urls.join(","), provider: "shengsuanyun" };
+          return sanitizeToolResultImages({ details, content }, "胜算云多媒体生成工具查询成功！");
         }
         return {
           content: [
@@ -269,16 +260,47 @@ export function generateTypebox(schema: JsonSchema): TSchema {
   const parse = (node: JsonSchema): TSchema => {
     const options = getOptions(node);
 
-    // Handle anyOf as Union
+    // Handle anyOf: merge all properties from all schemas (workaround for Union restriction)
+    // This makes all fields optional and available
     if (node.anyOf && Array.isArray(node.anyOf)) {
-      const unions = node.anyOf.map((item: JsonSchema) => parse(item));
-      return Type.Union(unions, Object.keys(options).length > 0 ? options : undefined);
+      const allProps: Record<string, TSchema> = {};
+      const allRequired = new Set<string>();
+
+      for (const subSchema of node.anyOf) {
+        if (subSchema.properties) {
+          for (const [key, value] of Object.entries(subSchema.properties)) {
+            // If we haven't seen this property yet, or if it's required in any schema
+            if (!allProps[key]) {
+              allProps[key] = parse(value);
+            }
+            // Track if this property is required in any of the anyOf schemas
+            if (
+              subSchema.required &&
+              Array.isArray(subSchema.required) &&
+              subSchema.required.includes(key)
+            ) {
+              allRequired.add(key);
+            }
+          }
+        }
+      }
+      const props: Record<string, TSchema> = {};
+      for (const [key, schema] of Object.entries(allProps)) {
+        props[key] = Type.Optional(schema);
+      }
+
+      return Type.Object(props, Object.keys(options).length > 0 ? options : undefined);
     }
 
-    // Handle enum as Union of Literals
+    // Handle enum using Type.Unsafe to create a valid string enum (as per tool schema guardrails)
     if (node.enum && Array.isArray(node.enum)) {
-      const literals = node.enum.map((val: string | number) => Type.Literal(val));
-      return Type.Union(literals, Object.keys(options).length > 0 ? options : undefined);
+      // Use Type.Unsafe to create a proper enum schema that validators accept
+      const enumValues = node.enum;
+      return Type.Unsafe<string | number>({
+        type: typeof enumValues[0] === "number" ? "number" : "string",
+        enum: enumValues,
+        ...options,
+      });
     }
 
     // Handle object type
@@ -317,15 +339,9 @@ export function generateTypebox(schema: JsonSchema): TSchema {
 
     return Type.Unknown();
   };
-
   return parse(schema);
 }
 
-// const inputSchema = {"$schema": "https://json-schema.org/draft/2020-12/schema","anyOf": [{"properties": {"prompt": {"type": "string","format": "textarea","title": "提示词","description": "描述你想生成的视频内容"},"seconds": {"type": "string","title": "视频时长（秒）","default": "4","enum": ["4", "8", "12"],"description": "生成的视频时长，单位为秒，默认4秒"},"size": {"type": "string","enum": ["720x1280", "1280x720"],"title": "输出分辨率","default": "720x1280","description": "输出分辨率，格式为 宽x高"}},"type": "object","required": ["prompt"],"title": "文生视频"},{"properties": {"prompt": {"type": "string","format": "textarea","title": "提示词","description": "描述你想生成的视频内容"},"input_reference": {"type": "string","title": "参考图片","ssy": "image","description": "用于引导视频生成的参考图片"},"seconds": {"type": "string","title": "视频时长（秒）","default": "4","enum": ["4", "8", "12"],"description": "生成的视频时长，单位为秒，默认4秒"},"size": {"type": "string","enum": ["720x1280", "1280x720"],"title": "输出分辨率","default": "720x1280","description": "输出分辨率，格式为 宽x高"}},"type": "object","required": ["prompt", "input_reference"],"title": "图生视频"}],"type": "object"};
-// const code = generateTypebox(inputSchema);
-// console.log(code);
-
-// Fallback tools that are always available
 let cachedTools: AnyAgentTool[] | null = null;
 let loadPromise: Promise<AnyAgentTool[]> | null = null;
 let fallbackToolsCache: AnyAgentTool[] | null = null;
@@ -373,11 +389,20 @@ export function createGenerateTools(opts?: {
   config?: OpenClawConfig;
   workspaceDir?: string;
 }): AnyAgentTool[] {
+  console.log(
+    `[shengsuanyun-generate] createGenerateTools() called, cachedTools: ${cachedTools ? `${cachedTools.length} tools` : "null"}`,
+  );
   if (cachedTools !== null) {
+    console.log(`[shengsuanyun-generate] Returning ${cachedTools.length} cached tools`);
     return cachedTools;
   }
+  console.log(
+    "[shengsuanyun-generate] cachedTools is null, starting background preload and returning fallback tools",
+  );
   preloadShengSuanYunTools(opts).catch((err) => {
     console.error("[shengsuanyun-generate] Background preload failed:", err);
   });
-  return getFallbackTools(opts);
+  const fallbackTools = getFallbackTools(opts);
+  console.log(`[shengsuanyun-generate] Returning ${fallbackTools.length} fallback tools`);
+  return fallbackTools;
 }
