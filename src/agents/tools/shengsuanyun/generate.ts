@@ -11,9 +11,7 @@ import {
 import { sanitizeToolResultImages } from "../../tool-images.ts";
 import type { AnyAgentTool } from "../common.ts";
 import { readStringParam, readStringArrayParam, readNumberParam } from "../common.ts";
-import { createGemini3ProImageTool } from "./gemini3pro-image-preview.ts";
 import { saveMediaToWorkspace } from "./save-media.ts";
-import { createZImageTurboTool } from "./zimage-turbo.ts";
 
 export const APP_HEADERS: Record<string, string> = {
   "HTTP-Referer": "https://openclaw.ai",
@@ -344,17 +342,6 @@ export function generateTypebox(schema: JsonSchema): TSchema {
 
 let cachedTools: AnyAgentTool[] | null = null;
 let loadPromise: Promise<AnyAgentTool[]> | null = null;
-let fallbackToolsCache: AnyAgentTool[] | null = null;
-
-function getFallbackTools(opts?: {
-  config?: OpenClawConfig;
-  workspaceDir?: string;
-}): AnyAgentTool[] {
-  if (fallbackToolsCache === null) {
-    fallbackToolsCache = [createZImageTurboTool(opts), createGemini3ProImageTool(opts)];
-  }
-  return fallbackToolsCache;
-}
 
 export async function preloadShengSuanYunTools(opts?: {
   config?: OpenClawConfig;
@@ -370,14 +357,11 @@ export async function preloadShengSuanYunTools(opts?: {
   }
   loadPromise = loadShengSuanYunTools(opts)
     .then((tools) => {
-      const fallbackTools = getFallbackTools(opts);
-      cachedTools = [...tools, ...fallbackTools];
-      return cachedTools;
+      return tools;
     })
     .catch((err) => {
       console.error("[shengsuanyun-generate] Failed to load tools, using fallback only:", err);
-      cachedTools = getFallbackTools(opts);
-      return cachedTools;
+      return [];
     })
     .finally(() => {
       loadPromise = null;
@@ -402,7 +386,5 @@ export function createGenerateTools(opts?: {
   preloadShengSuanYunTools(opts).catch((err) => {
     console.error("[shengsuanyun-generate] Background preload failed:", err);
   });
-  const fallbackTools = getFallbackTools(opts);
-  console.log(`[shengsuanyun-generate] Returning ${fallbackTools.length} fallback tools`);
-  return fallbackTools;
+  return [];
 }
