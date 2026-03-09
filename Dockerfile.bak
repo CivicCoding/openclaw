@@ -1,0 +1,123 @@
+# ============================================================================
+# Stage 1: Base image with system dependencies
+# ============================================================================
+FROM node:22-bookworm AS base
+
+# Install Bun globally (required for some build scripts)
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -fsSL https://bun.sh/install | bash \
+    && mv /root/.bun/bin/bun /usr/local/bin/bun \
+    && ln -s /usr/local/bin/bun /usr/local/bin/bunx \
+    && rm -rf /root/.bun
+
+# Enable corepack for pnpm
+RUN corepack enable
+
+# Optional extra apt packages (e.g. ffmpeg, git, build tools for native modules)
+ARG OPENCLAW_DOCKER_APT_PACKAGES=""
+RUN if [ -n "$OPENCLAW_DOCKER_APT_PACKAGES" ]; then \
+      apt-get update && \
+      DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends $OPENCLAW_DOCKER_APT_PACKAGES && \
+      apt-get clean && \
+      rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*; \
+    fi
+
+# ============================================================================
+# Stage 2: Install dependencies
+# 只复制 package 元数据，lockfile 不变时此层永远命中缓存
+# ============================================================================
+FROM base AS dependencies
+
+WORKDIR /app
+
+# 1) 只复制依赖声明文件 —— 这一组文件变动概率最低，独立成层最大化缓存命中
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+COPY ui/package.json ./ui/package.json
+COPY patches ./patches
+
+# 2) 复制 workspace 成员的 package.json（pnpm 识别 workspace 需要）
+#    skills/packages/extensions 的源码不在此阶段复制，避免源码变化破坏依赖缓存
+COPY skills ./skills
+COPY packages ./packages
+COPY extensions ./extensions
+
+# 3) 安装所有依赖（含 ui）—— lockfile 不变时整层缓存命中
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile
+
+# ============================================================================
+# Stage 3: Build application
+# 从 base 而非 dependencies 继承，避免把 node_modules 带入 builder 层快照
+# 再通过 COPY --from=dependencies 显式引入，让 Docker 正确追踪依赖
+# ============================================================================
+FROM base AS builder
+
+WORKDIR /app
+
+# 先把依赖层整体搬过来（缓存独立，源码变化不会让依赖重新安装）
+COPY --from=dependencies /app/node_modules ./node_modules
+COPY --from=dependencies /app/ui/node_modules ./ui/node_modules
+COPY --from=dependencies /app/packages ./packages
+COPY --from=dependencies /app/extensions ./extensions
+COPY --from=dependencies /app/skills ./skills
+
+# 复制 package 元数据（build 脚本需要读取）
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc tsconfig*.json tsdown.config.ts ./
+COPY ui/package.json ./ui/package.json
+COPY patches ./patches
+
+# 复制源码（变动最频繁，放最后以最大化上面各层的缓存复用）
+COPY src ./src
+COPY scripts ./scripts
+COPY apps ./apps
+COPY vendor ./vendor
+
+# Build main application
+RUN pnpm build
+
+# Build UI (force pnpm for ARM/Synology compatibility)
+ENV OPENCLAW_PREFER_PNPM=1
+COPY ui ./ui
+RUN pnpm ui:build
+
+# ============================================================================
+# Stage 4: Production image
+# 只从前面各阶段拷贝运行时需要的产物，镜像尽量小
+# ============================================================================
+FROM base AS production
+
+WORKDIR /app
+
+# Set production environment
+ENV NODE_ENV=production
+
+# 运行时依赖（来自 dependencies 阶段，缓存独立于源码变化）
+COPY --from=dependencies /app/node_modules ./node_modules
+COPY --from=dependencies /app/extensions ./extensions
+COPY --from=dependencies /app/packages ./packages
+COPY --from=dependencies /app/skills ./skills
+
+# UI node_modules（运行时 UI server 需要）
+COPY --from=dependencies /app/ui/node_modules ./ui/node_modules
+
+# 构建产物（来自 builder 阶段）
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/openclaw.mjs ./openclaw.mjs
+COPY --from=builder /app/package.json ./package.json
+# UI 构建产物
+COPY --from=builder /app/ui/dist ./ui/dist
+
+# 运行时静态资源（直接从构建上下文复制，变动少）
+COPY docs ./docs
+
+# Copy pre-installed skills (run: bunx clawhub@latest install sonoscli before building)
+
+# Set up runtime data directory (running as root)
+ENV OPENCLAW_HOME=/root/.openclaw
+RUN mkdir -p /root/.openclaw
+
+# Expose gateway and bridge ports
+EXPOSE 18789 18790
+
+ENTRYPOINT ["node", "openclaw.mjs", "gateway", "--allow-unconfigured"]
